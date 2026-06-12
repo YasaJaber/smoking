@@ -1,0 +1,15 @@
+{
+  "name": "smoking-pos-server",
+  "version": "1.0.0",
+  "description": "Central sync server (Vercel serverless + MongoDB Atlas) for the Smoking POS app",
+  "private": true,
+  "scripts": {
+    "test:local": "node local.js",
+    "dev": "npx vercel dev",
+    "deploy": "npx vercel --prod"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.7",
+    "mongodb": "^6.12.0"
+  }
+}

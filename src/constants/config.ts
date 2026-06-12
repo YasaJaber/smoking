@@ -1,0 +1,24 @@
+// ============================================================
+// App Configuration - Smoking POS
+// ============================================================
+
+export const APP_CONFIG = {
+  name: 'Smoking POS',
+  version: '1.0.0',
+  defaultCurrency: 'EGP',
+  defaultTaxRate: 0.14,
+  defaultLowStockThreshold: 5,
+  maxPinLength: 4,
+  invoiceNumberPrefix: 'INV',
+  syncIntervalMs: 30000, // 30 seconds
+  animationEnabled: true,
+} as const;
+
+export const STORAGE_KEYS = {
+  settings: 'pos_settings',
+  authToken: 'auth_token',
+  lastSync: 'last_sync',
+  theme: 'theme_mode',
+} as const;
+
+export const DB_NAME = 'smoking_pos.db';

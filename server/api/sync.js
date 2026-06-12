@@ -1,0 +1,38 @@
+// ============================================================
+// POST /api/sync - bidirectional sync endpoint (Vercel serverless function)
+// ============================================================
+
+const { getDb } = require('../lib/mongo');
+const { runSync } = require('../lib/syncCore');
+
+function setCors(res) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+}
+
+module.exports = async (req, res) => {
+  setCors(res);
+
+  if (req.method === 'OPTIONS') {
+    return res.status(204).end();
+  }
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: 'method_not_allowed' });
+  }
+
+  try {
+    // Vercel parses JSON bodies automatically; fall back if it's a string.
+    let body = req.body;
+    if (typeof body === 'string') {
+      try { body = JSON.parse(body); } catch { body = {}; }
+    }
+
+    const db = await getDb();
+    const payload = await runSync(db, body || {});
+    return res.status(200).json(payload);
+  } catch (err) {
+    console.error('Sync error:', err);
+    return res.status(500).json({ error: 'sync_failed', message: String(err.message || err) });
+  }
+};
