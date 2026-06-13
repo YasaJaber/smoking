@@ -82,6 +82,21 @@ export async function createInvoice(
       const itemId = generateId();
       const isCustom = item.isCustom === true;
 
+      if (!isCustom) {
+        const stock = await db.getFirstAsync<{ quantity: number; name: string }>(
+          'SELECT quantity, name FROM products WHERE id = ? AND is_active = 1',
+          [item.product.id]
+        );
+
+        if (!stock) {
+          throw new Error(`PRODUCT_NOT_FOUND:${item.product.name}`);
+        }
+
+        if (stock.quantity < item.quantity) {
+          throw new Error(`INSUFFICIENT_STOCK:${stock.name}:${stock.quantity}`);
+        }
+      }
+
       await db.runAsync(
         `INSERT INTO invoice_items (id, invoice_id, product_id, product_name, quantity, unit_cost, unit_price, total, created_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -99,9 +114,23 @@ export async function createInvoice(
       );
 
       if (!isCustom) {
+        const result = await db.runAsync(
+          'UPDATE products SET quantity = quantity - ?, synced = 0, updated_at = ? WHERE id = ? AND quantity >= ?',
+          [item.quantity, now, item.product.id, item.quantity]
+        );
+
+        if (result.changes !== 1) {
+          throw new Error(`INSUFFICIENT_STOCK:${item.product.name}`);
+        }
+      }
+    }
+
+    // Log every product touched by the sale for sync/audit visibility.
+    for (const item of cartItems) {
+      if (!item.isCustom) {
         await db.runAsync(
-          'UPDATE products SET quantity = MAX(0, quantity - ?), synced = 0, updated_at = ? WHERE id = ?',
-          [item.quantity, now, item.product.id]
+          "INSERT INTO sync_log (table_name, record_id, action, synced, created_at) VALUES ('products', ?, 'update', 0, ?)",
+          [item.product.id, now]
         );
       }
     }

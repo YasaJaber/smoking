@@ -176,8 +176,27 @@ export default function POSScreen() {
 
       // Push the new sale to the server in the background
       useSyncStore.getState().sync(true);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Checkout error:', error);
+      await loadProducts(selectedCategory);
+
+      const message = String(error?.message || '');
+      if (message.startsWith('INSUFFICIENT_STOCK:')) {
+        const [, productName, available] = message.split(':');
+        Alert.alert(
+          'المخزون غير كافي',
+          available
+            ? `الصنف "${productName}" المتاح منه ${available} فقط. راجع الكمية في الفاتورة.`
+            : `الصنف "${productName}" كميته غير كافية. راجع الكمية في الفاتورة.`
+        );
+        return;
+      }
+
+      if (message.startsWith('PRODUCT_NOT_FOUND:')) {
+        Alert.alert('الصنف غير متاح', 'تم حذف أو تعطيل صنف من الفاتورة. راجع الفاتورة وحاول مرة أخرى.');
+        return;
+      }
+
       Alert.alert('خطأ', 'حدث خطأ أثناء إتمام البيع. حاول مرة أخرى.');
     }
   };

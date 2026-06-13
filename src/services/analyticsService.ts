@@ -5,6 +5,27 @@
 import { getDatabase } from '../db/client';
 import type { AnalyticsSummary, DailySales, TopProduct } from '../types';
 
+function getLocalDayBounds(dateKey: string): [string, string] {
+  const [year, month, day] = dateKey.split('-').map(Number);
+  const start = new Date(year, month - 1, day);
+  const end = new Date(year, month - 1, day + 1);
+  return [start.toISOString(), end.toISOString()];
+}
+
+function getLocalRangeBounds(startDate: string, endDate: string): [string, string] {
+  const [start] = getLocalDayBounds(startDate);
+  const [, end] = getLocalDayBounds(endDate);
+  return [start, end];
+}
+
+function getLocalDateKey(date: Date = new Date()): string {
+  return [
+    date.getFullYear(),
+    String(date.getMonth() + 1).padStart(2, '0'),
+    String(date.getDate()).padStart(2, '0'),
+  ].join('-');
+}
+
 /**
  * Get analytics summary for a date range
  */
@@ -13,18 +34,24 @@ export async function getAnalyticsSummary(
   endDate: string
 ): Promise<AnalyticsSummary> {
   const db = await getDatabase();
+  const [start, end] = getLocalRangeBounds(startDate, endDate);
   const result = await db.getFirstAsync<any>(
     `SELECT
-      COALESCE(SUM(i.total), 0) as total_revenue,
-      COALESCE(SUM(ii.unit_cost * ii.quantity), 0) as total_cost,
-      COUNT(DISTINCT i.id) as total_invoices,
-      COALESCE(SUM(ii.quantity), 0) as total_items_sold
-    FROM invoices i
-    LEFT JOIN invoice_items ii ON i.id = ii.invoice_id
-    WHERE i.status != 'refunded'
-      AND date(i.created_at) >= date(?)
-      AND date(i.created_at) <= date(?)`,
-    [startDate, endDate]
+      COALESCE((SELECT SUM(total)
+        FROM invoices
+        WHERE status != 'refunded' AND created_at >= ? AND created_at < ?), 0) as total_revenue,
+      COALESCE((SELECT SUM(ii.unit_cost * ii.quantity)
+        FROM invoice_items ii
+        JOIN invoices i ON i.id = ii.invoice_id
+        WHERE i.status != 'refunded' AND i.created_at >= ? AND i.created_at < ?), 0) as total_cost,
+      COALESCE((SELECT COUNT(*)
+        FROM invoices
+        WHERE status != 'refunded' AND created_at >= ? AND created_at < ?), 0) as total_invoices,
+      COALESCE((SELECT SUM(ii.quantity)
+        FROM invoice_items ii
+        JOIN invoices i ON i.id = ii.invoice_id
+        WHERE i.status != 'refunded' AND i.created_at >= ? AND i.created_at < ?), 0) as total_items_sold`,
+    [start, end, start, end, start, end, start, end]
   );
 
   const totalRevenue = result?.total_revenue || 0;
@@ -49,9 +76,10 @@ export async function getDailySales(
   endDate: string
 ): Promise<DailySales[]> {
   const db = await getDatabase();
+  const [start, end] = getLocalRangeBounds(startDate, endDate);
   const rows = await db.getAllAsync<any>(
     `SELECT
-      date(i.created_at) as date,
+      date(i.created_at, 'localtime') as date,
       SUM(i.total) as revenue,
       SUM(i.total) - COALESCE(SUM(ii_cost.total_cost), 0) as profit,
       COUNT(DISTINCT i.id) as count
@@ -61,11 +89,11 @@ export async function getDailySales(
       FROM invoice_items GROUP BY invoice_id
     ) ii_cost ON i.id = ii_cost.invoice_id
     WHERE i.status != 'refunded'
-      AND date(i.created_at) >= date(?)
-      AND date(i.created_at) <= date(?)
-    GROUP BY date(i.created_at)
-    ORDER BY date(i.created_at) ASC`,
-    [startDate, endDate]
+      AND i.created_at >= ?
+      AND i.created_at < ?
+    GROUP BY date(i.created_at, 'localtime')
+    ORDER BY date(i.created_at, 'localtime') ASC`,
+    [start, end]
   );
 
   return rows.map((r: any) => ({
@@ -85,6 +113,7 @@ export async function getTopProducts(
   limit: number = 5
 ): Promise<TopProduct[]> {
   const db = await getDatabase();
+  const [start, end] = getLocalRangeBounds(startDate, endDate);
   const rows = await db.getAllAsync<any>(
     `SELECT
       ii.product_id,
@@ -95,12 +124,12 @@ export async function getTopProducts(
     FROM invoice_items ii
     JOIN invoices i ON ii.invoice_id = i.id
     WHERE i.status != 'refunded'
-      AND date(i.created_at) >= date(?)
-      AND date(i.created_at) <= date(?)
-    GROUP BY ii.product_id
+      AND i.created_at >= ?
+      AND i.created_at < ?
+    GROUP BY ii.product_id, ii.product_name
     ORDER BY total_sold DESC
     LIMIT ?`,
-    [startDate, endDate, limit]
+    [start, end, limit]
   );
 
   return rows;
@@ -123,12 +152,12 @@ export async function getOutstandingBalance(): Promise<number> {
 export function getDateNDaysAgo(n: number): string {
   const d = new Date();
   d.setDate(d.getDate() - n);
-  return d.toISOString().split('T')[0];
+  return getLocalDateKey(d);
 }
 
 /**
  * Helper: get today's date string
  */
 export function getToday(): string {
-  return new Date().toISOString().split('T')[0];
+  return getLocalDateKey();
 }

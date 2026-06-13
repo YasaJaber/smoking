@@ -32,6 +32,11 @@ function recalculate(items: CartItem[], taxEnabled: boolean, taxRate: number) {
   return { subtotal, taxAmount, total };
 }
 
+function clampQuantity(item: CartItem, quantity: number): number {
+  if (item.isCustom) return quantity;
+  return Math.min(quantity, item.product.quantity);
+}
+
 export const useCartStore = create<CartState>((set, get) => ({
   items: [],
   subtotal: 0,
@@ -50,8 +55,8 @@ export const useCartStore = create<CartState>((set, get) => ({
         idx === existingIndex
           ? {
               ...item,
-              quantity: item.quantity + 1,
-              total: (item.quantity + 1) * item.product.sell_price,
+              quantity: clampQuantity(item, item.quantity + 1),
+              total: clampQuantity(item, item.quantity + 1) * item.product.sell_price,
             }
           : item
       );
@@ -114,7 +119,11 @@ export const useCartStore = create<CartState>((set, get) => ({
     const { items, taxEnabled, taxRate } = get();
     const newItems = items.map((item) =>
       item.product.id === productId
-        ? { ...item, quantity, total: quantity * item.product.sell_price }
+        ? {
+            ...item,
+            quantity: clampQuantity(item, quantity),
+            total: clampQuantity(item, quantity) * item.product.sell_price,
+          }
         : item
     );
     set({ items: newItems, ...recalculate(newItems, taxEnabled, taxRate) });
