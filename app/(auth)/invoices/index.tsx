@@ -23,6 +23,7 @@ import {
 } from '../../../src/services/invoiceService';
 import { CurrentDateBadge, formatDisplayDate, getLocalDateKey } from '../../../src/components/common/CurrentDateBadge';
 import { useSettingsStore } from '../../../src/stores/settingsStore';
+import { useDateStore } from '../../../src/stores/dateStore';
 import { formatCurrency, formatTime, generateInvoiceNumber } from '../../../src/utils/formatters';
 import { Colors, Typography, Spacing, BorderRadius } from '../../../src/constants/theme';
 import type { Invoice, InvoiceItem } from '../../../src/types';
@@ -59,7 +60,8 @@ export default function InvoicesScreen() {
   const colors = darkMode ? Colors.dark : Colors.light;
   const currency = useSettingsStore((s) => s.settings.currency);
 
-  const [selectedDate, setSelectedDate] = useState(getLocalDateKey());
+  const selectedDate = useDateStore((s) => s.selectedDateKey);
+  const setSelectedDate = useDateStore((s) => s.setSelectedDateKey);
   const [summary, setSummary] = useState<InvoiceDaySummary>(emptySummary);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [itemsByInvoice, setItemsByInvoice] = useState<Record<string, InvoiceItem[]>>({});
@@ -217,7 +219,7 @@ export default function InvoicesScreen() {
             أرشيف الفواتير حسب اليوم
           </Text>
         </View>
-        <CurrentDateBadge dateKey={selectedDate} />
+        <CurrentDateBadge dateKey={selectedDate} onDateChange={setSelectedDate} />
       </View>
 
       <View style={styles.dateControls}>

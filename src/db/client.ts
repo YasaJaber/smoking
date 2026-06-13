@@ -148,6 +148,32 @@ export async function initializeDatabase(): Promise<void> {
           created_at TEXT DEFAULT (datetime('now'))
         );
 
+        -- Purchases table (budget-based purchasing)
+        CREATE TABLE IF NOT EXISTS purchases (
+          id TEXT PRIMARY KEY,
+          budget REAL NOT NULL DEFAULT 0,
+          spent REAL NOT NULL DEFAULT 0,
+          remaining REAL NOT NULL DEFAULT 0,
+          note TEXT,
+          status TEXT DEFAULT 'open' CHECK(status IN ('open', 'closed')),
+          created_at TEXT DEFAULT (datetime('now')),
+          updated_at TEXT DEFAULT (datetime('now'))
+        );
+
+        -- Purchase items table
+        CREATE TABLE IF NOT EXISTS purchase_items (
+          id TEXT PRIMARY KEY,
+          purchase_id TEXT NOT NULL REFERENCES purchases(id),
+          product_id TEXT,
+          product_name TEXT NOT NULL,
+          category_id TEXT REFERENCES categories(id),
+          cost_price REAL NOT NULL DEFAULT 0,
+          sell_price REAL NOT NULL DEFAULT 0,
+          quantity INTEGER NOT NULL DEFAULT 0,
+          total_cost REAL NOT NULL DEFAULT 0,
+          created_at TEXT DEFAULT (datetime('now'))
+        );
+
         -- Create indexes for performance
         CREATE INDEX IF NOT EXISTS idx_products_category ON products(category_id);
         CREATE INDEX IF NOT EXISTS idx_products_active ON products(is_active);
@@ -155,6 +181,9 @@ export async function initializeDatabase(): Promise<void> {
         CREATE INDEX IF NOT EXISTS idx_invoices_status ON invoices(status);
         CREATE INDEX IF NOT EXISTS idx_invoice_items_invoice ON invoice_items(invoice_id);
         CREATE INDEX IF NOT EXISTS idx_sync_log_synced ON sync_log(synced);
+        CREATE INDEX IF NOT EXISTS idx_purchases_status ON purchases(status);
+        CREATE INDEX IF NOT EXISTS idx_purchases_date ON purchases(created_at);
+        CREATE INDEX IF NOT EXISTS idx_purchase_items_purchase ON purchase_items(purchase_id);
 
         -- Insert default settings if not exist
         INSERT OR IGNORE INTO settings (id) VALUES (1);

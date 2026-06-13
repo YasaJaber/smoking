@@ -68,6 +68,16 @@ export default function AuthLayout() {
         }}
       />
       <Tabs.Screen
+        name="purchases"
+        options={{
+          title: 'المشتريات',
+          href: isAdmin ? undefined : null,
+          tabBarIcon: ({ color, size }) => (
+            <MaterialCommunityIcons name="cart-arrow-down" size={size} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
         name="analytics"
         options={{
           title: 'الإحصائيات',

@@ -135,3 +135,28 @@ export interface PeriodComparison {
   profit_change: number;
   invoices_change: number;
 }
+
+// Purchase types
+export interface Purchase {
+  id: string;
+  budget: number;
+  spent: number;
+  remaining: number;
+  note: string | null;
+  status: 'open' | 'closed';
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PurchaseItem {
+  id: string;
+  purchase_id: string;
+  product_id: string | null;
+  product_name: string;
+  category_id: string;
+  cost_price: number;
+  sell_price: number;
+  quantity: number;
+  total_cost: number;
+  created_at: string;
+}

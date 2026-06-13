@@ -5,7 +5,7 @@
 import React, { useEffect, useState } from 'react';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { View, ActivityIndicator, StyleSheet, Platform } from 'react-native';
+import { View, ActivityIndicator, StyleSheet, Platform, AppState } from 'react-native';
 import * as NavigationBar from 'expo-navigation-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { initializeDatabase } from '../src/db/client';
@@ -13,6 +13,42 @@ import { seedDatabase } from '../src/db/seed';
 import { useSettingsStore } from '../src/stores/settingsStore';
 import { useNetworkStatus } from '../src/hooks/useNetworkStatus';
 import { Colors } from '../src/constants/theme';
+
+type NavigationBarApi = typeof NavigationBar & {
+  setHidden?: (hidden: boolean) => void | Promise<void>;
+};
+
+async function hideAndroidNavigationBar() {
+  if (Platform.OS !== 'android') {
+    return;
+  }
+
+  const navigationBar = NavigationBar as NavigationBarApi;
+
+  try {
+    if (navigationBar.setHidden) {
+      await Promise.resolve(navigationBar.setHidden(true));
+      return;
+    }
+
+    await NavigationBar.setVisibilityAsync('hidden');
+  } catch (error) {
+    console.warn('Failed to hide Android navigation bar:', error);
+  }
+}
+
+async function configureAndroidNavigationBar() {
+  if (Platform.OS !== 'android') {
+    return;
+  }
+
+  try {
+    await NavigationBar.setBehaviorAsync('overlay-swipe');
+    await hideAndroidNavigationBar();
+  } catch (error) {
+    console.warn('Failed to configure Android navigation bar:', error);
+  }
+}
 
 export default function RootLayout() {
   const [isReady, setIsReady] = useState(false);
@@ -55,12 +91,46 @@ function ReadyApp({ darkMode, colors }: ReadyAppProps) {
   // Connectivity monitoring + auto-sync starts only after SQLite is ready.
   useNetworkStatus();
 
-  // Hide the Android navigation bar for immersive full-screen mode
+  // Keep Android in immersive mode and re-hide the system bar after temporary reveals.
   useEffect(() => {
-    if (Platform.OS === 'android') {
-      NavigationBar.setBehaviorAsync('inset-swipe');
-      NavigationBar.setVisibilityAsync('hidden');
+    if (Platform.OS !== 'android') {
+      return;
     }
+
+    let hideTimer: ReturnType<typeof setTimeout> | undefined;
+
+    const scheduleHide = (delay = 0) => {
+      if (hideTimer) {
+        clearTimeout(hideTimer);
+      }
+
+      hideTimer = setTimeout(() => {
+        void hideAndroidNavigationBar();
+      }, delay);
+    };
+
+    void configureAndroidNavigationBar();
+
+    const visibilitySubscription = NavigationBar.addVisibilityListener(({ visibility }) => {
+      if (visibility === 'visible') {
+        scheduleHide(250);
+      }
+    });
+
+    const appStateSubscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') {
+        scheduleHide(100);
+      }
+    });
+
+    return () => {
+      if (hideTimer) {
+        clearTimeout(hideTimer);
+      }
+
+      visibilitySubscription.remove();
+      appStateSubscription.remove();
+    };
   }, []);
 
   return (
