@@ -12,8 +12,39 @@ import { getDatabase } from './client';
  * when devices sync against the central server the rows merge (upsert) instead
  * of multiplying into duplicates.
  */
+/**
+ * Make sure the default login accounts always exist.
+ *
+ * This runs on every app start (independent of the category seed guard) so a
+ * device can always log in, even if the products/categories were already
+ * seeded or pulled from the cloud without any user rows. INSERT OR IGNORE +
+ * deterministic IDs make it safe to call repeatedly.
+ */
+export async function ensureDefaultUsers(): Promise<void> {
+  const db = await getDatabase();
+  const now = new Date().toISOString();
+
+  await db.runAsync(
+    'INSERT OR IGNORE INTO users (id, name, pin, role, is_active, created_at) VALUES (?, ?, ?, ?, 1, ?)',
+    ['user-admin', 'المدير', '1234', 'admin', now]
+  );
+  await db.runAsync(
+    'INSERT OR IGNORE INTO users (id, name, pin, role, is_active, created_at) VALUES (?, ?, ?, ?, 1, ?)',
+    ['user-cashier', 'الكاشير', '0000', 'cashier', now]
+  );
+
+  // Re-activate the admin account if it was somehow deactivated, otherwise
+  // login (which requires is_active = 1) would keep failing.
+  await db.runAsync(
+    "UPDATE users SET is_active = 1 WHERE id IN ('user-admin', 'user-cashier')"
+  );
+}
+
 export async function seedDatabase(): Promise<void> {
   const db = await getDatabase();
+
+  // Default login accounts must always exist, regardless of seed state.
+  await ensureDefaultUsers();
 
   // Check if already seeded
   const existingCategories = await db.getFirstAsync<{ count: number }>(
@@ -22,16 +53,6 @@ export async function seedDatabase(): Promise<void> {
   if (existingCategories && existingCategories.count > 0) return;
 
   const now = new Date().toISOString();
-
-  // === Create default users (deterministic IDs) ===
-  await db.runAsync(
-    'INSERT OR IGNORE INTO users (id, name, pin, role, created_at) VALUES (?, ?, ?, ?, ?)',
-    ['user-admin', 'المدير', '1234', 'admin', now]
-  );
-  await db.runAsync(
-    'INSERT OR IGNORE INTO users (id, name, pin, role, created_at) VALUES (?, ?, ?, ?, ?)',
-    ['user-cashier', 'الكاشير', '0000', 'cashier', now]
-  );
 
   // === Create categories (deterministic IDs) ===
   const categories = [
