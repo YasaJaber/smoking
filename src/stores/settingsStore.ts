@@ -61,10 +61,15 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   },
 
   updateSettings: async (updates: Partial<Settings>) => {
+    const current = get().settings;
+    const newSettings = { ...current, ...updates };
+
+    // Update in-memory state immediately so the UI (switches, inputs) reacts
+    // right away. Persisting to SQLite happens afterwards in the background.
+    set({ settings: newSettings });
+
     try {
       const db = await getDatabase();
-      const current = get().settings;
-      const newSettings = { ...current, ...updates };
 
       const setClauses: string[] = [];
       const values: any[] = [];
@@ -81,14 +86,12 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
 
       setClauses.push("updated_at = datetime('now')");
 
-      if (setClauses.length > 0) {
+      if (values.length > 0) {
         await db.runAsync(
           `UPDATE settings SET ${setClauses.join(', ')} WHERE id = 1`,
           values
         );
       }
-
-      set({ settings: newSettings });
     } catch (err) {
       console.error('Error updating settings:', err);
     }

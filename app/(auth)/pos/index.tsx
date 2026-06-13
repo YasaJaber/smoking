@@ -17,22 +17,23 @@ import {
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
-import Animated, { FadeIn, FadeInDown, SlideInDown } from 'react-native-reanimated';
+import Animated, { SlideInDown } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CategoryBar } from '../../../src/components/pos/CategoryBar';
 import { ProductGrid } from '../../../src/components/pos/ProductGrid';
 import { CartPanel } from '../../../src/components/pos/CartPanel';
+import { ReceiptModal } from '../../../src/components/pos/ReceiptModal';
 import { SyncIndicator } from '../../../src/components/common/SyncIndicator';
 import { useSyncStore } from '../../../src/stores/syncStore';
 import { useCartStore } from '../../../src/stores/cartStore';
 import { useAuthStore } from '../../../src/stores/authStore';
 import { useSettingsStore } from '../../../src/stores/settingsStore';
-import { createInvoice } from '../../../src/services/invoiceService';
+import { createInvoice, getInvoiceWithItems } from '../../../src/services/invoiceService';
 import { getDatabase } from '../../../src/db/client';
 import { formatCurrency } from '../../../src/utils/formatters';
 import { Colors, Gradients, Typography, Spacing, BorderRadius } from '../../../src/constants/theme';
-import type { Category, Product } from '../../../src/types';
-import { router } from 'expo-router';
+import type { Category, Product, Invoice, InvoiceItem } from '../../../src/types';
+import { router, useFocusEffect } from 'expo-router';
 
 const { width } = Dimensions.get('window');
 const isTablet = width >= 768;
@@ -48,15 +49,20 @@ export default function POSScreen() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
-  const [showSuccess, setShowSuccess] = useState(false);
-  const [lastInvoiceTotal, setLastInvoiceTotal] = useState(0);
   const [showCheckout, setShowCheckout] = useState(false);
   const [paidAmount, setPaidAmount] = useState('');
+  const [showReceipt, setShowReceipt] = useState(false);
+  const [lastInvoice, setLastInvoice] = useState<Invoice | null>(null);
+  const [lastItems, setLastItems] = useState<InvoiceItem[]>([]);
 
-  // Load categories
-  useEffect(() => {
-    loadCategories();
-  }, []);
+  // Reload categories + products every time the screen gains focus, so changes
+  // made in other tabs (e.g. adding a category in Inventory) show up here.
+  useFocusEffect(
+    useCallback(() => {
+      loadCategories();
+      loadProducts(selectedCategory);
+    }, [selectedCategory])
+  );
 
   // Load products when category changes
   useEffect(() => {
@@ -124,17 +130,19 @@ export default function POSScreen() {
         paid
       );
 
-      setLastInvoiceTotal(cart.total);
       setShowCheckout(false);
       cart.clearCart();
+
+      // Load the saved invoice with its items to render the receipt
+      const saved = await getInvoiceWithItems(invoice.id);
+      setLastInvoice(saved?.invoice ?? invoice);
+      setLastItems(saved?.items ?? []);
+      setShowReceipt(true);
 
       // Refresh products to show updated stock
       await loadProducts(selectedCategory);
 
-      // Show success
-      setShowSuccess(true);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      setTimeout(() => setShowSuccess(false), 2500);
 
       // Push the new sale to the server in the background
       useSyncStore.getState().sync(true);
@@ -329,28 +337,13 @@ export default function POSScreen() {
         </View>
       </Modal>
 
-      {/* Success Toast */}
-      {showSuccess && (
-        <Animated.View
-          entering={FadeIn.duration(200)}
-          style={styles.successToast}
-        >
-          <LinearGradient
-            colors={Gradients.accent as unknown as readonly [string, string, ...string[]]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
-            style={styles.successGradient}
-          >
-            <MaterialCommunityIcons name="check-circle" size={24} color="#fff" />
-            <View>
-              <Text style={styles.successTitle}>تم البيع بنجاح!</Text>
-              <Text style={styles.successAmount}>
-                {formatCurrency(lastInvoiceTotal, settings.currency)}
-              </Text>
-            </View>
-          </LinearGradient>
-        </Animated.View>
-      )}
+      {/* Receipt / Invoice after sale */}
+      <ReceiptModal
+        visible={showReceipt}
+        invoice={lastInvoice}
+        items={lastItems}
+        onClose={() => setShowReceipt(false)}
+      />
     </View>
   );
 }
@@ -518,31 +511,5 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: Typography.fontSize.base,
     fontWeight: '700',
-  },
-  // Success Toast
-  successToast: {
-    position: 'absolute',
-    bottom: 80,
-    left: '30%',
-    right: '30%',
-    zIndex: 100,
-  },
-  successGradient: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: Spacing.md,
-    paddingVertical: Spacing.md,
-    paddingHorizontal: Spacing.xl,
-    borderRadius: BorderRadius.xl,
-  },
-  successTitle: {
-    color: '#fff',
-    fontSize: Typography.fontSize.base,
-    fontWeight: '700',
-  },
-  successAmount: {
-    color: 'rgba(255,255,255,0.9)',
-    fontSize: Typography.fontSize.sm,
   },
 });

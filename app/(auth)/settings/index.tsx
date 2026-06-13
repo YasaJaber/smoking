@@ -30,6 +30,50 @@ import { router } from 'expo-router';
 const { width } = Dimensions.get('window');
 const isTablet = width >= 768;
 
+type ThemeColors = typeof Colors.dark | typeof Colors.light;
+
+// NOTE: These are defined OUTSIDE the screen component on purpose.
+// If they live inside, every keystroke re-creates them and React remounts
+// the children (including TextInputs), which dismisses the keyboard.
+const SettingSection = ({
+  title,
+  icon,
+  children,
+  delay = 0,
+  colors,
+}: {
+  title: string;
+  icon: string;
+  children: React.ReactNode;
+  delay?: number;
+  colors: ThemeColors;
+}) => (
+  <Animated.View entering={FadeInDown.duration(300).delay(delay)}>
+    <View style={[styles.section, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+      <View style={styles.sectionHeader}>
+        <MaterialCommunityIcons name={icon as any} size={20} color={colors.primary} />
+        <Text style={[styles.sectionTitle, { color: colors.text }]}>{title}</Text>
+      </View>
+      {children}
+    </View>
+  </Animated.View>
+);
+
+const SettingRow = ({
+  label,
+  children,
+  colors,
+}: {
+  label: string;
+  children: React.ReactNode;
+  colors: ThemeColors;
+}) => (
+  <View style={[styles.settingRow, { borderTopColor: colors.border }]}>
+    <Text style={[styles.settingLabel, { color: colors.textSecondary }]}>{label}</Text>
+    <View style={styles.settingValue}>{children}</View>
+  </View>
+);
+
 export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
   const { settings, updateSettings } = useSettingsStore();
@@ -108,25 +152,6 @@ export default function SettingsScreen() {
     );
   };
 
-  const SettingSection = ({ title, icon, children, delay = 0 }: { title: string; icon: string; children: React.ReactNode; delay?: number }) => (
-    <Animated.View entering={FadeInDown.duration(300).delay(delay)}>
-      <View style={[styles.section, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-        <View style={styles.sectionHeader}>
-          <MaterialCommunityIcons name={icon as any} size={20} color={colors.primary} />
-          <Text style={[styles.sectionTitle, { color: colors.text }]}>{title}</Text>
-        </View>
-        {children}
-      </View>
-    </Animated.View>
-  );
-
-  const SettingRow = ({ label, children }: { label: string; children: React.ReactNode }) => (
-    <View style={[styles.settingRow, { borderTopColor: colors.border }]}>
-      <Text style={[styles.settingLabel, { color: colors.textSecondary }]}>{label}</Text>
-      <View style={styles.settingValue}>{children}</View>
-    </View>
-  );
-
   return (
     <View style={[styles.container, { backgroundColor: colors.background, paddingTop: insets.top }]}>
       {/* Header */}
@@ -153,15 +178,15 @@ export default function SettingsScreen() {
           {/* Left Column */}
           <View style={styles.column}>
             {/* Store Info */}
-            <SettingSection title="معلومات المحل" icon="store" delay={0}>
-              <SettingRow label="اسم المحل">
+            <SettingSection title="معلومات المحل" icon="store" delay={0} colors={colors}>
+              <SettingRow label="اسم المحل" colors={colors}>
                 <TextInput
                   style={[styles.input, { backgroundColor: colors.surfaceLight, borderColor: colors.border, color: colors.text }]}
                   value={storeName}
                   onChangeText={setStoreName}
                 />
               </SettingRow>
-              <SettingRow label="رقم التليفون">
+              <SettingRow label="رقم التليفون" colors={colors}>
                 <TextInput
                   style={[styles.input, { backgroundColor: colors.surfaceLight, borderColor: colors.border, color: colors.text }]}
                   value={phone}
@@ -172,8 +197,8 @@ export default function SettingsScreen() {
             </SettingSection>
 
             {/* Tax Settings */}
-            <SettingSection title="الضرائب" icon="percent" delay={100}>
-              <SettingRow label="تفعيل الضريبة">
+            <SettingSection title="الضرائب" icon="percent" delay={100} colors={colors}>
+              <SettingRow label="تفعيل الضريبة" colors={colors}>
                 <Switch
                   value={settings.tax_enabled}
                   onValueChange={(v) => updateSettings({ tax_enabled: v })}
@@ -182,7 +207,7 @@ export default function SettingsScreen() {
                 />
               </SettingRow>
               {settings.tax_enabled && (
-                <SettingRow label="نسبة الضريبة (%)">
+                <SettingRow label="نسبة الضريبة (%)" colors={colors}>
                   <TextInput
                     style={[styles.input, styles.smallInput, { backgroundColor: colors.surfaceLight, borderColor: colors.border, color: colors.text }]}
                     value={taxRate}
@@ -194,8 +219,8 @@ export default function SettingsScreen() {
             </SettingSection>
 
             {/* Appearance */}
-            <SettingSection title="المظهر" icon="palette" delay={200}>
-              <SettingRow label="الوضع الداكن">
+            <SettingSection title="المظهر" icon="palette" delay={200} colors={colors}>
+              <SettingRow label="الوضع الداكن" colors={colors}>
                 <Switch
                   value={settings.dark_mode}
                   onValueChange={(v) => updateSettings({ dark_mode: v })}
@@ -209,15 +234,15 @@ export default function SettingsScreen() {
           {/* Right Column */}
           <View style={styles.column}>
             {/* Printing */}
-            <SettingSection title="الطباعة" icon="printer" delay={100}>
-              <SettingRow label="رسالة الترحيب">
+            <SettingSection title="الطباعة" icon="printer" delay={100} colors={colors}>
+              <SettingRow label="رسالة الترحيب" colors={colors}>
                 <TextInput
                   style={[styles.input, { backgroundColor: colors.surfaceLight, borderColor: colors.border, color: colors.text }]}
                   value={welcomeMsg}
                   onChangeText={setWelcomeMsg}
                 />
               </SettingRow>
-              <SettingRow label="رسالة الختام">
+              <SettingRow label="رسالة الختام" colors={colors}>
                 <TextInput
                   style={[styles.input, { backgroundColor: colors.surfaceLight, borderColor: colors.border, color: colors.text }]}
                   value={footerMsg}
@@ -227,8 +252,8 @@ export default function SettingsScreen() {
             </SettingSection>
 
             {/* Inventory */}
-            <SettingSection title="المخزون" icon="package-variant" delay={200}>
-              <SettingRow label="حد المخزون المنخفض">
+            <SettingSection title="المخزون" icon="package-variant" delay={200} colors={colors}>
+              <SettingRow label="حد المخزون المنخفض" colors={colors}>
                 <TextInput
                   style={[styles.input, styles.smallInput, { backgroundColor: colors.surfaceLight, borderColor: colors.border, color: colors.text }]}
                   value={lowStock}
@@ -239,7 +264,7 @@ export default function SettingsScreen() {
             </SettingSection>
 
             {/* Cloud Sync */}
-            <SettingSection title="المزامنة السحابية" icon="cloud-sync" delay={250}>
+            <SettingSection title="المزامنة السحابية" icon="cloud-sync" delay={250} colors={colors}>
               <View style={{ paddingHorizontal: Spacing.base, paddingBottom: Spacing.md, paddingTop: Spacing.sm }}>
                 <Text style={[styles.settingLabel, { color: colors.textSecondary, marginBottom: Spacing.xs }]}>
                   عنوان السيرفر
@@ -293,7 +318,7 @@ export default function SettingsScreen() {
             </SettingSection>
 
             {/* Danger Zone */}
-            <SettingSection title="منطقة الخطر" icon="alert-octagon" delay={300}>
+            <SettingSection title="منطقة الخطر" icon="alert-octagon" delay={300} colors={colors}>
               <Pressable onPress={handleResetDB} style={[styles.dangerBtn, { borderColor: colors.danger }]}>
                 <MaterialCommunityIcons name="delete-forever" size={18} color={colors.danger} />
                 <Text style={[styles.dangerBtnText, { color: colors.danger }]}>

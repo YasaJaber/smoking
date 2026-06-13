@@ -20,6 +20,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import Animated, { FadeInDown, FadeIn, SlideInDown } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useFocusEffect } from 'expo-router';
 import {
   getAllProducts,
   getAllCategories,
@@ -63,9 +64,13 @@ export default function InventoryScreen() {
   const [catName, setCatName] = useState('');
   const [catColor, setCatColor] = useState<string>(CategoryColors[0]);
 
-  useEffect(() => {
-    loadData();
-  }, []);
+  // Reload data whenever the screen gains focus so categories/products stay
+  // in sync with changes made elsewhere (or pulled in by a background sync).
+  useFocusEffect(
+    useCallback(() => {
+      loadData();
+    }, [])
+  );
 
   useEffect(() => {
     loadProducts();
@@ -168,11 +173,15 @@ export default function InventoryScreen() {
       Alert.alert('خطأ', 'يجب إدخال اسم القسم');
       return;
     }
-    await createCategory(catName.trim(), 'folder', catColor);
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    setShowCategoryModal(false);
-    setCatName('');
-    await loadCategories();
+    try {
+      await createCategory(catName.trim(), 'folder', catColor);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      setShowCategoryModal(false);
+      setCatName('');
+      await loadCategories();
+    } catch (error) {
+      Alert.alert('خطأ', 'حدث خطأ أثناء حفظ القسم');
+    }
   };
 
   const getCategoryName = (catId: string) => {
