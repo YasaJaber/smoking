@@ -35,7 +35,7 @@ interface SyncPayload {
 const TABLE_COLUMNS: Record<string, string[]> = {
   categories: ['id', 'name', 'icon', 'color', 'sort_order', 'is_active', 'synced', 'created_at', 'updated_at'],
   products: ['id', 'category_id', 'name', 'barcode', 'cost_price', 'sell_price', 'quantity', 'min_quantity', 'image_uri', 'is_active', 'synced', 'created_at', 'updated_at'],
-  invoices: ['id', 'invoice_number', 'invoice_name', 'user_id', 'subtotal', 'tax_amount', 'total', 'amount_paid', 'amount_due', 'payment_method', 'status', 'synced', 'created_at'],
+  invoices: ['id', 'invoice_number', 'invoice_name', 'invoice_type', 'merchant_name', 'merchant_phone', 'user_id', 'subtotal', 'tax_amount', 'total', 'amount_paid', 'amount_due', 'payment_method', 'status', 'synced', 'created_at'],
   invoice_items: ['id', 'invoice_id', 'product_id', 'product_name', 'quantity', 'unit_cost', 'unit_price', 'total', 'created_at'],
 };
 

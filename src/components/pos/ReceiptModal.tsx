@@ -72,6 +72,7 @@ export function ReceiptModal({ visible, invoice, items, onClose }: ReceiptModalP
   const calculatedTotal = invoice.subtotal + invoice.tax_amount;
   const priceAdjustment = invoice.total - calculatedTotal;
   const hasPriceAdjustment = Math.abs(priceAdjustment) > 0.005;
+  const successTitle = invoice.invoice_type === 'merchant' ? 'تم إصدار فاتورة التاجر' : 'تم البيع بنجاح';
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
@@ -88,7 +89,7 @@ export function ReceiptModal({ visible, invoice, items, onClose }: ReceiptModalP
             style={styles.successHeader}
           >
             <MaterialCommunityIcons name="check-circle" size={36} color="#fff" />
-            <Text style={styles.successTitle}>تم البيع بنجاح</Text>
+            <Text style={styles.successTitle}>{successTitle}</Text>
             <Text style={styles.successAmount}>{formatCurrency(invoice.total, currency)}</Text>
           </LinearGradient>
 
@@ -103,6 +104,22 @@ export function ReceiptModal({ visible, invoice, items, onClose }: ReceiptModalP
                 <Text style={[styles.metaLabel, { color: colors.textSecondary }]}>اسم الفاتورة</Text>
                 <Text style={[styles.metaValue, { color: colors.text }]} numberOfLines={1}>
                   {invoice.invoice_name}
+                </Text>
+              </View>
+            )}
+            {invoice.merchant_name && (
+              <View style={styles.metaRow}>
+                <Text style={[styles.metaLabel, { color: colors.textSecondary }]}>اسم التاجر</Text>
+                <Text style={[styles.metaValue, { color: colors.text }]} numberOfLines={1}>
+                  {invoice.merchant_name}
+                </Text>
+              </View>
+            )}
+            {invoice.merchant_phone && (
+              <View style={styles.metaRow}>
+                <Text style={[styles.metaLabel, { color: colors.textSecondary }]}>تليفون التاجر</Text>
+                <Text style={[styles.metaValue, { color: colors.text }]}>
+                  {invoice.merchant_phone}
                 </Text>
               </View>
             )}

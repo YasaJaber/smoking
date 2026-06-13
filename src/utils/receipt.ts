@@ -91,6 +91,12 @@ export function buildReceiptHtml({ invoice, items, settings, cashierName }: Rece
   const invoiceNameLine = invoice.invoice_name
     ? `<div class="row"><span>اسم الفاتورة</span><span>${escapeHtml(invoice.invoice_name)}</span></div>`
     : '';
+  const merchantNameLine = invoice.merchant_name
+    ? `<div class="row"><span>اسم التاجر</span><span>${escapeHtml(invoice.merchant_name)}</span></div>`
+    : '';
+  const merchantPhoneLine = invoice.merchant_phone
+    ? `<div class="row"><span>تليفون التاجر</span><span>${escapeHtml(invoice.merchant_phone)}</span></div>`
+    : '';
 
   return `<!DOCTYPE html>
 <html dir="rtl" lang="ar">
@@ -161,6 +167,8 @@ export function buildReceiptHtml({ invoice, items, settings, cashierName }: Rece
 
   <div class="meta">
     ${invoiceNameLine}
+    ${merchantNameLine}
+    ${merchantPhoneLine}
     <div class="row"><span>رقم الفاتورة</span><span>${generateInvoiceNumber(invoice.invoice_number)}</span></div>
     <div class="row"><span>التاريخ</span><span>${formatDateTime(invoice.created_at)}</span></div>
     ${cashierName ? `<div class="row"><span>الكاشير</span><span>${escapeHtml(cashierName)}</span></div>` : ''}

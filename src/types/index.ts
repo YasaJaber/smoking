@@ -62,6 +62,9 @@ export interface Invoice {
   id: string;
   invoice_number: number;
   invoice_name: string | null;
+  invoice_type: 'sale' | 'merchant';
+  merchant_name: string | null;
+  merchant_phone: string | null;
   user_id: string;
   subtotal: number;
   tax_amount: number;

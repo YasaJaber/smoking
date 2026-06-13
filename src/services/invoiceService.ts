@@ -5,6 +5,13 @@
 import { getDatabase, generateId } from '../db/client';
 import type { Invoice, InvoiceItem, CartItem } from '../types';
 
+export interface CreateInvoiceOptions {
+  invoiceName?: string;
+  invoiceType?: Invoice['invoice_type'];
+  merchantName?: string;
+  merchantPhone?: string;
+}
+
 export interface InvoiceDaySummary {
   count: number;
   subtotal: number;
@@ -44,7 +51,7 @@ export async function createInvoice(
   total: number,
   userId: string,
   amountPaid: number,
-  invoiceName?: string
+  invoiceNameOrOptions?: string | CreateInvoiceOptions
 ): Promise<Invoice> {
   const db = await getDatabase();
   const invoiceId = generateId();
@@ -52,7 +59,14 @@ export async function createInvoice(
   const now = new Date().toISOString();
   const amountDue = Math.max(0, total - amountPaid);
   const status = amountDue > 0 ? 'partial' : 'completed';
-  const normalizedInvoiceName = invoiceName?.trim() || null;
+  const options =
+    typeof invoiceNameOrOptions === 'string'
+      ? { invoiceName: invoiceNameOrOptions }
+      : invoiceNameOrOptions ?? {};
+  const normalizedInvoiceName = options.invoiceName?.trim() || null;
+  const invoiceType = options.invoiceType ?? 'sale';
+  const merchantName = options.merchantName?.trim() || null;
+  const merchantPhone = options.merchantPhone?.trim() || null;
 
   // Start transaction
   await db.execAsync('BEGIN TRANSACTION');
@@ -60,12 +74,15 @@ export async function createInvoice(
   try {
     // Insert invoice
     await db.runAsync(
-      `INSERT INTO invoices (id, invoice_number, invoice_name, user_id, subtotal, tax_amount, total, amount_paid, amount_due, payment_method, status, synced, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'cash', ?, 0, ?)`,
+      `INSERT INTO invoices (id, invoice_number, invoice_name, invoice_type, merchant_name, merchant_phone, user_id, subtotal, tax_amount, total, amount_paid, amount_due, payment_method, status, synced, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'cash', ?, 0, ?)`,
       [
         invoiceId,
         invoiceNumber,
         normalizedInvoiceName,
+        invoiceType,
+        merchantName,
+        merchantPhone,
         userId,
         subtotal,
         taxAmount,
@@ -147,6 +164,9 @@ export async function createInvoice(
       id: invoiceId,
       invoice_number: invoiceNumber,
       invoice_name: normalizedInvoiceName,
+      invoice_type: invoiceType,
+      merchant_name: merchantName,
+      merchant_phone: merchantPhone,
       user_id: userId,
       subtotal,
       tax_amount: taxAmount,

@@ -113,6 +113,9 @@ export async function initializeDatabase(): Promise<void> {
           id TEXT PRIMARY KEY,
           invoice_number INTEGER NOT NULL,
           invoice_name TEXT,
+          invoice_type TEXT DEFAULT 'sale' CHECK(invoice_type IN ('sale', 'merchant')),
+          merchant_name TEXT,
+          merchant_phone TEXT,
           user_id TEXT REFERENCES users(id),
           subtotal REAL NOT NULL DEFAULT 0,
           tax_amount REAL NOT NULL DEFAULT 0,
@@ -208,6 +211,9 @@ async function runMigrations(database: SQLite.SQLiteDatabase): Promise<void> {
   const safeAlters = [
     "ALTER TABLE settings ADD COLUMN server_url TEXT DEFAULT ''",
     "ALTER TABLE invoices ADD COLUMN invoice_name TEXT",
+    "ALTER TABLE invoices ADD COLUMN invoice_type TEXT DEFAULT 'sale'",
+    "ALTER TABLE invoices ADD COLUMN merchant_name TEXT",
+    "ALTER TABLE invoices ADD COLUMN merchant_phone TEXT",
   ];
 
   for (const sql of safeAlters) {
