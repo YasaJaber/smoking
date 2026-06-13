@@ -35,11 +35,16 @@ function createMemoryDb() {
           return { acknowledged: true };
         },
         find(query) {
-          const since = query.srv_ts.$gt;
-          const ne = query.device_id.$ne;
-          let rows = docs
-            .filter((d) => d.srv_ts > since && d.device_id !== ne)
-            .map(({ _id, srv_ts, device_id, ...rest }) => rest);
+          let rows = docs;
+          if (query.id?.$in) {
+            const wanted = new Set(query.id.$in);
+            rows = rows.filter((d) => wanted.has(d.id));
+          } else if (query.srv_ts?.$gt !== undefined) {
+            const since = query.srv_ts.$gt;
+            const ne = query.device_id.$ne;
+            rows = rows.filter((d) => d.srv_ts > since && d.device_id !== ne);
+          }
+          rows = rows.map(({ _id, srv_ts, device_id, ...rest }) => rest);
           return {
             sort(spec) {
               const key = Object.keys(spec)[0];
@@ -50,6 +55,17 @@ function createMemoryDb() {
               return rows;
             },
           };
+        },
+        async bulkWrite(ops) {
+          for (const op of ops) {
+            if (!op.replaceOne) continue;
+            await this.replaceOne(
+              op.replaceOne.filter,
+              op.replaceOne.replacement,
+              { upsert: op.replaceOne.upsert }
+            );
+          }
+          return { acknowledged: true };
         },
         async countDocuments() {
           return docs.length;

@@ -35,21 +35,42 @@ async function applyIncoming(db, table, rows, now, deviceId) {
   if (!Array.isArray(rows) || rows.length === 0) return;
   const coll = db.collection(table);
   const isLww = LWW_TABLES.has(table);
+  const cleanRows = rows.filter((raw) => raw && raw.id != null);
+  if (cleanRows.length === 0) return;
 
-  for (const raw of rows) {
-    if (!raw || raw.id == null) continue;
+  let existingById = new Map();
+  if (isLww) {
+    const ids = cleanRows.map((row) => row.id);
+    const existingRows = await coll
+      .find({ id: { $in: ids } }, { projection: { _id: 0, id: 1, updated_at: 1 } })
+      .toArray();
+    existingById = new Map(existingRows.map((row) => [row.id, row]));
+  }
+
+  const ops = [];
+  for (const raw of cleanRows) {
     const doc = pickColumns(table, raw);
     doc.srv_ts = now;
     doc.device_id = deviceId;
 
     if (isLww) {
-      const existing = await coll.findOne({ id: raw.id }, { projection: { updated_at: 1 } });
+      const existing = existingById.get(raw.id);
       if (existing && String(doc.updated_at) < String(existing.updated_at)) {
         continue; // server copy is newer -> keep it
       }
     }
 
-    await coll.replaceOne({ id: raw.id }, doc, { upsert: true });
+    ops.push({
+      replaceOne: {
+        filter: { id: raw.id },
+        replacement: doc,
+        upsert: true,
+      },
+    });
+  }
+
+  if (ops.length > 0) {
+    await coll.bulkWrite(ops, { ordered: false });
   }
 }
 

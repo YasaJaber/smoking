@@ -33,26 +33,34 @@ function getClientPromise() {
 }
 
 /**
- * Get the connected database, ensuring indexes exist once per warm instance.
+ * Ensure useful indexes without blocking the request path. On cold starts,
+ * waiting for every createIndex can consume most of Vercel's function window.
+ */
+function ensureIndexes(db) {
+  if (globalThis._mongoIndexesPromise) return;
+
+  const collections = ['categories', 'products', 'invoices', 'invoice_items', 'purchases', 'purchase_items'];
+  globalThis._mongoIndexesPromise = Promise.all(
+    collections.map(async (name) => {
+      const coll = db.collection(name);
+      await coll.createIndex({ id: 1 }, { unique: true });
+      await coll.createIndex({ srv_ts: 1 });
+      await coll.createIndex({ device_id: 1, srv_ts: 1 });
+    })
+  ).catch(() => {
+    globalThis._mongoIndexesPromise = null;
+  });
+}
+
+/**
+ * Get the connected database.
  */
 async function getDb() {
   const client = await getClientPromise();
   const db = client.db(DB_NAME);
 
-  if (!globalThis._mongoIndexesReady) {
-    try {
-      const collections = ['categories', 'products', 'invoices', 'invoice_items', 'purchases', 'purchase_items'];
-      await Promise.all(
-        collections.map(async (name) => {
-          const coll = db.collection(name);
-          await coll.createIndex({ id: 1 }, { unique: true });
-          await coll.createIndex({ srv_ts: 1 });
-        })
-      );
-      globalThis._mongoIndexesReady = true;
-    } catch {
-      // Will retry on the next invocation
-    }
+  if (!globalThis._mongoIndexesPromise) {
+    ensureIndexes(db);
   }
 
   return db;

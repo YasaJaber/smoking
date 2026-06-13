@@ -14,7 +14,7 @@
 import { getDatabase, getMeta, setMeta, generateId } from '../db/client';
 
 const SYNC_PATH = '/api/sync';
-const REQUEST_TIMEOUT_MS = 15000;
+const REQUEST_TIMEOUT_MS = 30000;
 
 export interface SyncResult {
   pushed: number;
