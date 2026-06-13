@@ -22,3 +22,5 @@ export const STORAGE_KEYS = {
 } as const;
 
 export const DB_NAME = 'smoking_pos.db';
+
+export const DEFAULT_SERVER_URL = 'https://smoking-theta.vercel.app';

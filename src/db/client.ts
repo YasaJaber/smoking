@@ -3,7 +3,7 @@
 // ============================================================
 
 import * as SQLite from 'expo-sqlite';
-import { DB_NAME } from '../constants/config';
+import { DB_NAME, DEFAULT_SERVER_URL } from '../constants/config';
 
 let db: SQLite.SQLiteDatabase | null = null;
 let dbOpenPromise: Promise<SQLite.SQLiteDatabase> | null = null;
@@ -57,7 +57,7 @@ export async function initializeDatabase(): Promise<void> {
           footer_message TEXT DEFAULT 'شكراً لزيارتكم',
           currency TEXT DEFAULT 'EGP',
           low_stock_threshold INTEGER DEFAULT 5,
-          server_url TEXT DEFAULT '',
+          server_url TEXT DEFAULT 'https://smoking-theta.vercel.app',
           created_at TEXT DEFAULT (datetime('now')),
           updated_at TEXT DEFAULT (datetime('now'))
         );
@@ -159,6 +159,7 @@ export async function initializeDatabase(): Promise<void> {
           remaining REAL NOT NULL DEFAULT 0,
           note TEXT,
           status TEXT DEFAULT 'open' CHECK(status IN ('open', 'closed')),
+          synced INTEGER DEFAULT 0,
           created_at TEXT DEFAULT (datetime('now')),
           updated_at TEXT DEFAULT (datetime('now'))
         );
@@ -174,6 +175,7 @@ export async function initializeDatabase(): Promise<void> {
           sell_price REAL NOT NULL DEFAULT 0,
           quantity INTEGER NOT NULL DEFAULT 0,
           total_cost REAL NOT NULL DEFAULT 0,
+          synced INTEGER DEFAULT 0,
           created_at TEXT DEFAULT (datetime('now'))
         );
 
@@ -214,6 +216,8 @@ async function runMigrations(database: SQLite.SQLiteDatabase): Promise<void> {
     "ALTER TABLE invoices ADD COLUMN invoice_type TEXT DEFAULT 'sale'",
     "ALTER TABLE invoices ADD COLUMN merchant_name TEXT",
     "ALTER TABLE invoices ADD COLUMN merchant_phone TEXT",
+    "ALTER TABLE purchases ADD COLUMN synced INTEGER DEFAULT 0",
+    "ALTER TABLE purchase_items ADD COLUMN synced INTEGER DEFAULT 0",
   ];
 
   for (const sql of safeAlters) {
@@ -227,6 +231,11 @@ async function runMigrations(database: SQLite.SQLiteDatabase): Promise<void> {
   await database.runAsync(
     "UPDATE settings SET store_name = 'smoking' WHERE store_name = ?",
     ['محل المدخنات']
+  );
+
+  await database.runAsync(
+    "UPDATE settings SET server_url = ? WHERE id = 1 AND (server_url IS NULL OR trim(server_url) = '')",
+    [DEFAULT_SERVER_URL]
   );
 
   await migrateInvoiceItemsNullableProductId(database);

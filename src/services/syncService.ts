@@ -29,6 +29,8 @@ interface SyncPayload {
     products?: any[];
     invoices?: any[];
     invoice_items?: any[];
+    purchases?: any[];
+    purchase_items?: any[];
   };
 }
 
@@ -37,6 +39,8 @@ const TABLE_COLUMNS: Record<string, string[]> = {
   products: ['id', 'category_id', 'name', 'barcode', 'cost_price', 'sell_price', 'quantity', 'min_quantity', 'image_uri', 'is_active', 'synced', 'created_at', 'updated_at'],
   invoices: ['id', 'invoice_number', 'invoice_name', 'invoice_type', 'merchant_name', 'merchant_phone', 'user_id', 'subtotal', 'tax_amount', 'total', 'amount_paid', 'amount_due', 'payment_method', 'status', 'synced', 'created_at'],
   invoice_items: ['id', 'invoice_id', 'product_id', 'product_name', 'quantity', 'unit_cost', 'unit_price', 'total', 'created_at'],
+  purchases: ['id', 'budget', 'spent', 'remaining', 'note', 'status', 'synced', 'created_at', 'updated_at'],
+  purchase_items: ['id', 'purchase_id', 'product_id', 'product_name', 'category_id', 'cost_price', 'sell_price', 'quantity', 'total_cost', 'synced', 'created_at'],
 };
 
 /**
@@ -100,6 +104,9 @@ async function collectLocalChanges() {
   const invoices = await db.getAllAsync<any>(
     `SELECT ${TABLE_COLUMNS.invoices.join(', ')} FROM invoices WHERE synced = 0`
   );
+  const purchases = await db.getAllAsync<any>(
+    `SELECT ${TABLE_COLUMNS.purchases.join(', ')} FROM purchases WHERE synced = 0`
+  );
 
   let invoice_items: any[] = [];
   if (invoices.length > 0) {
@@ -110,7 +117,23 @@ async function collectLocalChanges() {
     );
   }
 
-  return { categories, products, invoices, invoice_items };
+  let purchase_items = await db.getAllAsync<any>(
+    `SELECT ${TABLE_COLUMNS.purchase_items.join(', ')} FROM purchase_items WHERE synced = 0`
+  );
+  if (purchases.length > 0) {
+    const placeholders = purchases.map(() => '?').join(', ');
+    const purchaseIds = purchases.map((p) => p.id);
+    const rowsForChangedPurchases = await db.getAllAsync<any>(
+      `SELECT ${TABLE_COLUMNS.purchase_items.join(', ')} FROM purchase_items WHERE purchase_id IN (${placeholders})`,
+      purchaseIds
+    );
+    const byId = new Map<string, any>();
+    for (const row of purchase_items) byId.set(row.id, row);
+    for (const row of rowsForChangedPurchases) byId.set(row.id, row);
+    purchase_items = Array.from(byId.values());
+  }
+
+  return { categories, products, invoices, invoice_items, purchases, purchase_items };
 }
 
 /**
@@ -169,7 +192,12 @@ export async function syncNow(): Promise<SyncResult> {
 
   const local = await collectLocalChanges();
   const pushedCount =
-    local.categories.length + local.products.length + local.invoices.length;
+    local.categories.length +
+    local.products.length +
+    local.invoices.length +
+    local.invoice_items.length +
+    local.purchases.length +
+    local.purchase_items.length;
 
   const response = await fetchWithTimeout(`${base}${SYNC_PATH}`, {
     method: 'POST',
@@ -193,11 +221,15 @@ export async function syncNow(): Promise<SyncResult> {
   await applyPulledRows('products', remote.products || []);
   await applyPulledRows('invoices', remote.invoices || []);
   await applyPulledRows('invoice_items', remote.invoice_items || []);
+  await applyPulledRows('purchases', remote.purchases || []);
+  await applyPulledRows('purchase_items', remote.purchase_items || []);
 
   // Mark our pushed rows as synced.
   await markSynced('categories', local.categories.map((r) => r.id));
   await markSynced('products', local.products.map((r) => r.id));
   await markSynced('invoices', local.invoices.map((r) => r.id));
+  await markSynced('purchases', local.purchases.map((r) => r.id));
+  await markSynced('purchase_items', local.purchase_items.map((r) => r.id));
 
   // Advance the sync cursor.
   await setMeta('last_sync', String(payload.serverTime));
@@ -206,7 +238,9 @@ export async function syncNow(): Promise<SyncResult> {
   const pulledCount =
     (remote.categories?.length || 0) +
     (remote.products?.length || 0) +
-    (remote.invoices?.length || 0);
+    (remote.invoices?.length || 0) +
+    (remote.purchases?.length || 0) +
+    (remote.purchase_items?.length || 0);
 
   return { pushed: pushedCount, pulled: pulledCount, serverTime: payload.serverTime };
 }
@@ -220,7 +254,9 @@ export async function getPendingChangesCount(): Promise<number> {
     `SELECT
       (SELECT COUNT(*) FROM categories WHERE synced = 0) +
       (SELECT COUNT(*) FROM products WHERE synced = 0) +
-      (SELECT COUNT(*) FROM invoices WHERE synced = 0) AS count`
+      (SELECT COUNT(*) FROM invoices WHERE synced = 0) +
+      (SELECT COUNT(*) FROM purchases WHERE synced = 0) +
+      (SELECT COUNT(*) FROM purchase_items WHERE synced = 0) AS count`
   );
   return result?.count || 0;
 }

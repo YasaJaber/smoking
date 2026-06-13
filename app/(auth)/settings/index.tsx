@@ -25,6 +25,7 @@ import { useSyncStore } from '../../../src/stores/syncStore';
 import { CurrentDateBadge } from '../../../src/components/common/CurrentDateBadge';
 import { getDatabase } from '../../../src/db/client';
 import { formatDateTime } from '../../../src/utils/formatters';
+import { DEFAULT_SERVER_URL } from '../../../src/constants/config';
 import { Colors, Gradients, Typography, Spacing, BorderRadius } from '../../../src/constants/theme';
 import { router } from 'expo-router';
 
@@ -274,7 +275,7 @@ export default function SettingsScreen() {
                   style={[styles.input, { backgroundColor: colors.surfaceLight, borderColor: colors.border, color: colors.text, textAlign: 'left' }]}
                   value={serverUrl}
                   onChangeText={setServerUrl}
-                  placeholder="http://192.168.1.10:4000"
+                  placeholder={DEFAULT_SERVER_URL}
                   placeholderTextColor={colors.textMuted}
                   autoCapitalize="none"
                   keyboardType="url"

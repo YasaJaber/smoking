@@ -147,6 +147,7 @@ export interface Purchase {
   remaining: number;
   note: string | null;
   status: 'open' | 'closed';
+  synced: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -161,5 +162,6 @@ export interface PurchaseItem {
   sell_price: number;
   quantity: number;
   total_cost: number;
+  synced: boolean;
   created_at: string;
 }

@@ -35,8 +35,8 @@ export async function createPurchase(
   const now = new Date().toISOString();
 
   await db.runAsync(
-    `INSERT INTO purchases (id, budget, spent, remaining, note, status, created_at, updated_at)
-     VALUES (?, ?, 0, ?, ?, 'open', ?, ?)`,
+    `INSERT INTO purchases (id, budget, spent, remaining, note, status, synced, created_at, updated_at)
+     VALUES (?, ?, 0, ?, ?, 'open', 0, ?, ?)`,
     [id, budget, budget, note?.trim() || null, now, now]
   );
 
@@ -47,6 +47,7 @@ export async function createPurchase(
     remaining: budget,
     note: note?.trim() || null,
     status: 'open',
+    synced: false,
     created_at: now,
     updated_at: now,
   };
@@ -136,8 +137,8 @@ export async function addPurchaseItem(
   try {
     // 1. Insert purchase item
     await db.runAsync(
-      `INSERT INTO purchase_items (id, purchase_id, product_id, product_name, category_id, cost_price, sell_price, quantity, total_cost, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO purchase_items (id, purchase_id, product_id, product_name, category_id, cost_price, sell_price, quantity, total_cost, synced, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)`,
       [
         itemId,
         purchaseId,
@@ -157,7 +158,7 @@ export async function addPurchaseItem(
     const newRemaining = purchase.budget - newSpent;
 
     await db.runAsync(
-      'UPDATE purchases SET spent = ?, remaining = ?, updated_at = ? WHERE id = ?',
+      'UPDATE purchases SET spent = ?, remaining = ?, synced = 0, updated_at = ? WHERE id = ?',
       [newSpent, newRemaining, now, purchaseId]
     );
 
@@ -188,7 +189,7 @@ export async function addPurchaseItem(
 
       // Update the item with the new product_id for reference
       await db.runAsync(
-        'UPDATE purchase_items SET product_id = ? WHERE id = ?',
+        'UPDATE purchase_items SET product_id = ?, synced = 0 WHERE id = ?',
         [newProductId, itemId]
       );
     }
@@ -205,6 +206,7 @@ export async function addPurchaseItem(
       sell_price: data.sell_price,
       quantity: data.quantity,
       total_cost: totalCost,
+      synced: false,
       created_at: now,
     };
   } catch (error) {
@@ -247,7 +249,7 @@ export async function deletePurchaseItem(itemId: string): Promise<void> {
       const newRemaining = purchase.budget - newSpent;
 
       await db.runAsync(
-        'UPDATE purchases SET spent = ?, remaining = ?, updated_at = ? WHERE id = ?',
+        'UPDATE purchases SET spent = ?, remaining = ?, synced = 0, updated_at = ? WHERE id = ?',
         [newSpent, newRemaining, now, item.purchase_id]
       );
     }
@@ -288,7 +290,7 @@ export async function addBudget(
   const newRemaining = purchase.remaining + additionalBudget;
 
   await db.runAsync(
-    'UPDATE purchases SET budget = ?, remaining = ?, updated_at = ? WHERE id = ?',
+    'UPDATE purchases SET budget = ?, remaining = ?, synced = 0, updated_at = ? WHERE id = ?',
     [newBudget, newRemaining, now, purchaseId]
   );
 
@@ -296,6 +298,7 @@ export async function addBudget(
     ...purchase,
     budget: newBudget,
     remaining: newRemaining,
+    synced: false,
     updated_at: now,
   };
 }
@@ -308,7 +311,7 @@ export async function closePurchase(purchaseId: string): Promise<void> {
   const now = new Date().toISOString();
 
   await db.runAsync(
-    "UPDATE purchases SET status = 'closed', updated_at = ? WHERE id = ?",
+    "UPDATE purchases SET status = 'closed', synced = 0, updated_at = ? WHERE id = ?",
     [now, purchaseId]
   );
 }
@@ -321,7 +324,7 @@ export async function reopenPurchase(purchaseId: string): Promise<void> {
   const now = new Date().toISOString();
 
   await db.runAsync(
-    "UPDATE purchases SET status = 'open', updated_at = ? WHERE id = ?",
+    "UPDATE purchases SET status = 'open', synced = 0, updated_at = ? WHERE id = ?",
     [now, purchaseId]
   );
 }

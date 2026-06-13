@@ -8,12 +8,14 @@ const DATA_COLUMNS = {
   products: ['id', 'category_id', 'name', 'barcode', 'cost_price', 'sell_price', 'quantity', 'min_quantity', 'image_uri', 'is_active', 'synced', 'created_at', 'updated_at'],
   invoices: ['id', 'invoice_number', 'invoice_name', 'invoice_type', 'merchant_name', 'merchant_phone', 'user_id', 'subtotal', 'tax_amount', 'total', 'amount_paid', 'amount_due', 'payment_method', 'status', 'synced', 'created_at'],
   invoice_items: ['id', 'invoice_id', 'product_id', 'product_name', 'quantity', 'unit_cost', 'unit_price', 'total', 'created_at'],
+  purchases: ['id', 'budget', 'spent', 'remaining', 'note', 'status', 'synced', 'created_at', 'updated_at'],
+  purchase_items: ['id', 'purchase_id', 'product_id', 'product_name', 'category_id', 'cost_price', 'sell_price', 'quantity', 'total_cost', 'synced', 'created_at'],
 };
 
 const TABLES = Object.keys(DATA_COLUMNS);
 
 // Collections that carry an `updated_at` field get Last-Write-Wins protection.
-const LWW_TABLES = new Set(['categories', 'products']);
+const LWW_TABLES = new Set(['categories', 'products', 'purchases']);
 
 /** Build a clean document containing only the known data fields. */
 function pickColumns(table, raw) {
@@ -76,6 +78,8 @@ async function runSync(db, body) {
   await applyIncoming(db, 'products', incoming.products, now, device);
   await applyIncoming(db, 'invoices', incoming.invoices, now, device);
   await applyIncoming(db, 'invoice_items', incoming.invoice_items, now, device);
+  await applyIncoming(db, 'purchases', incoming.purchases, now, device);
+  await applyIncoming(db, 'purchase_items', incoming.purchase_items, now, device);
 
   // Collect everything changed since `since` by OTHER devices.
   const out = {
@@ -83,6 +87,8 @@ async function runSync(db, body) {
     products: await pullChanges(db, 'products', since, device),
     invoices: await pullChanges(db, 'invoices', since, device),
     invoice_items: await pullChanges(db, 'invoice_items', since, device),
+    purchases: await pullChanges(db, 'purchases', since, device),
+    purchase_items: await pullChanges(db, 'purchase_items', since, device),
   };
 
   return { serverTime: now, changes: out };

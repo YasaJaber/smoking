@@ -4,6 +4,7 @@
 
 import { create } from 'zustand';
 import { getDatabase } from '../db/client';
+import { DEFAULT_SERVER_URL } from '../constants/config';
 import type { Settings } from '../types';
 
 interface SettingsState {
@@ -27,7 +28,7 @@ const defaultSettings: Settings = {
   footer_message: 'شكراً لزيارتكم',
   currency: 'EGP',
   low_stock_threshold: 5,
-  server_url: '',
+  server_url: DEFAULT_SERVER_URL,
   created_at: '',
   updated_at: '',
 };

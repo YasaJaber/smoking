@@ -41,7 +41,7 @@ async function getDb() {
 
   if (!globalThis._mongoIndexesReady) {
     try {
-      const collections = ['categories', 'products', 'invoices', 'invoice_items'];
+      const collections = ['categories', 'products', 'invoices', 'invoice_items', 'purchases', 'purchase_items'];
       await Promise.all(
         collections.map(async (name) => {
           const coll = db.collection(name);
