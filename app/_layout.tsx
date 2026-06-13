@@ -11,6 +11,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { initializeDatabase } from '../src/db/client';
 import { seedDatabase } from '../src/db/seed';
 import { useSettingsStore } from '../src/stores/settingsStore';
+import { scheduleDateRollover, useDateStore } from '../src/stores/dateStore';
 import { useNetworkStatus } from '../src/hooks/useNetworkStatus';
 import { Colors } from '../src/constants/theme';
 
@@ -90,6 +91,22 @@ interface ReadyAppProps {
 function ReadyApp({ darkMode, colors }: ReadyAppProps) {
   // Connectivity monitoring + auto-sync starts only after SQLite is ready.
   useNetworkStatus();
+
+  // Keep the shared business date aligned with the local calendar after midnight.
+  useEffect(() => {
+    useDateStore.getState().rolloverToTodayIfNeeded();
+    const cancelRollover = scheduleDateRollover();
+    const appStateSubscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') {
+        useDateStore.getState().rolloverToTodayIfNeeded();
+      }
+    });
+
+    return () => {
+      cancelRollover();
+      appStateSubscription.remove();
+    };
+  }, []);
 
   // Keep Android in immersive mode and re-hide the system bar after temporary reveals.
   useEffect(() => {

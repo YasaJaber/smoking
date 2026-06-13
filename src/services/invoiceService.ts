@@ -3,6 +3,7 @@
 // ============================================================
 
 import { getDatabase, generateId } from '../db/client';
+import { getLocalDateKey, getLocalDayBounds } from '../utils/dates';
 import type { Invoice, InvoiceItem, CartItem } from '../types';
 
 export interface CreateInvoiceOptions {
@@ -19,14 +20,6 @@ export interface InvoiceDaySummary {
   total: number;
   amountPaid: number;
   amountDue: number;
-}
-
-function getLocalDayBounds(dateKey: string): [string, string] {
-  const [year, month, day] = dateKey.split('-').map(Number);
-  const start = new Date(year, month - 1, day);
-  const end = new Date(year, month - 1, day + 1);
-
-  return [start.toISOString(), end.toISOString()];
 }
 
 /**
@@ -308,12 +301,7 @@ export async function getInvoiceDaySummary(dateKey: string): Promise<InvoiceDayS
  * Get today's invoices count and total
  */
 export async function getTodaySummary(): Promise<{ count: number; total: number }> {
-  const today = new Date();
-  const dateKey = [
-    today.getFullYear(),
-    String(today.getMonth() + 1).padStart(2, '0'),
-    String(today.getDate()).padStart(2, '0'),
-  ].join('-');
+  const dateKey = getLocalDateKey();
   const summary = await getInvoiceDaySummary(dateKey);
 
   return { count: summary.count, total: summary.total };

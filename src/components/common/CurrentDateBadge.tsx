@@ -8,14 +8,9 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Colors, Typography, Spacing, BorderRadius } from '../../constants/theme';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useDateStore } from '../../stores/dateStore';
+import { getLocalDateKey } from '../../utils/dates';
 
-export function getLocalDateKey(date: Date = new Date()): string {
-  return [
-    date.getFullYear(),
-    String(date.getMonth() + 1).padStart(2, '0'),
-    String(date.getDate()).padStart(2, '0'),
-  ].join('-');
-}
+export { getLocalDateKey };
 
 export function formatDisplayDate(date: Date | string): string {
   const value = typeof date === 'string' ? new Date(`${date}T00:00:00`) : date;

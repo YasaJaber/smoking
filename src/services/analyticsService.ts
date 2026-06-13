@@ -3,27 +3,13 @@
 // ============================================================
 
 import { getDatabase } from '../db/client';
+import { getLocalDateKey, getLocalDayBounds } from '../utils/dates';
 import type { AnalyticsSummary, DailySales, TopProduct } from '../types';
-
-function getLocalDayBounds(dateKey: string): [string, string] {
-  const [year, month, day] = dateKey.split('-').map(Number);
-  const start = new Date(year, month - 1, day);
-  const end = new Date(year, month - 1, day + 1);
-  return [start.toISOString(), end.toISOString()];
-}
 
 function getLocalRangeBounds(startDate: string, endDate: string): [string, string] {
   const [start] = getLocalDayBounds(startDate);
   const [, end] = getLocalDayBounds(endDate);
   return [start, end];
-}
-
-function getLocalDateKey(date: Date = new Date()): string {
-  return [
-    date.getFullYear(),
-    String(date.getMonth() + 1).padStart(2, '0'),
-    String(date.getDate()).padStart(2, '0'),
-  ].join('-');
 }
 
 /**

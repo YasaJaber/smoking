@@ -41,6 +41,7 @@ import {
   getAllCategories,
 } from '../../../src/services/inventoryService';
 import { useSettingsStore } from '../../../src/stores/settingsStore';
+import { useDateStore } from '../../../src/stores/dateStore';
 import { formatCurrency, formatDate } from '../../../src/utils/formatters';
 import { Colors, Gradients, Typography, Spacing, BorderRadius } from '../../../src/constants/theme';
 import type { Purchase, PurchaseItem, Product, Category } from '../../../src/types';
@@ -55,6 +56,7 @@ export default function PurchasesScreen() {
   const darkMode = useSettingsStore((s) => s.settings.dark_mode);
   const colors = darkMode ? Colors.dark : Colors.light;
   const currency = useSettingsStore((s) => s.settings.currency);
+  const selectedDateKey = useDateStore((s) => s.selectedDateKey);
 
   // Data state
   const [purchases, setPurchases] = useState<Purchase[]>([]);
@@ -89,7 +91,7 @@ export default function PurchasesScreen() {
   useFocusEffect(
     useCallback(() => {
       loadInitialData();
-    }, [])
+    }, [selectedDateKey])
   );
 
   const loadInitialData = async () => {

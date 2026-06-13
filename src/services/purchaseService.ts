@@ -3,6 +3,7 @@
 // ============================================================
 
 import { getDatabase, generateId } from '../db/client';
+import { getLocalDateKey, getLocalDayBounds } from '../utils/dates';
 import type { Purchase, PurchaseItem, Product } from '../types';
 
 // ==================== PURCHASES ====================
@@ -13,13 +14,11 @@ import type { Purchase, PurchaseItem, Product } from '../types';
  */
 export async function getTodayPurchase(): Promise<Purchase | null> {
   const db = await getDatabase();
-  const now = new Date();
-  const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const endOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+  const [startOfDay, endOfDay] = getLocalDayBounds(getLocalDateKey());
 
   return db.getFirstAsync<Purchase>(
     "SELECT * FROM purchases WHERE status = 'open' AND created_at >= ? AND created_at < ? ORDER BY created_at DESC LIMIT 1",
-    [startOfDay.toISOString(), endOfDay.toISOString()]
+    [startOfDay, endOfDay]
   );
 }
 
