@@ -5,11 +5,9 @@
 import React from 'react';
 import { Redirect, Tabs } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { View, StyleSheet } from 'react-native';
-import { BlurView } from 'expo-blur';
 import { useAuthStore } from '../../src/stores/authStore';
 import { useSettingsStore } from '../../src/stores/settingsStore';
-import { Colors, Typography, BorderRadius } from '../../src/constants/theme';
+import { Colors, Typography } from '../../src/constants/theme';
 
 export default function AuthLayout() {
   const { isAuthenticated, user } = useAuthStore();
@@ -57,6 +55,15 @@ export default function AuthLayout() {
           href: isAdmin ? undefined : null,
           tabBarIcon: ({ color, size }) => (
             <MaterialCommunityIcons name="package-variant" size={size} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="invoices"
+        options={{
+          title: 'الفواتير',
+          tabBarIcon: ({ color, size }) => (
+            <MaterialCommunityIcons name="receipt-text-outline" size={size} color={color} />
           ),
         }}
       />

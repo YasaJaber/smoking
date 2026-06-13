@@ -10,13 +10,14 @@ import {
   StyleSheet,
   ScrollView,
   Pressable,
-  Dimensions,
+  useWindowDimensions,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BarChart } from 'react-native-gifted-charts';
+import { CurrentDateBadge } from '../../../src/components/common/CurrentDateBadge';
 import {
   getAnalyticsSummary,
   getDailySales,
@@ -30,13 +31,12 @@ import { formatCurrency, formatCompact } from '../../../src/utils/formatters';
 import { Colors, Gradients, Typography, Spacing, BorderRadius } from '../../../src/constants/theme';
 import type { AnalyticsSummary, DailySales, TopProduct } from '../../../src/types';
 
-const { width } = Dimensions.get('window');
-const isTablet = width >= 768;
-
 type Period = 'today' | 'week' | 'month' | 'all';
 
 export default function AnalyticsScreen() {
   const insets = useSafeAreaInsets();
+  const { width } = useWindowDimensions();
+  const isCompact = width < 768;
   const darkMode = useSettingsStore((s) => s.settings.dark_mode);
   const colors = darkMode ? Colors.dark : Colors.light;
   const currency = useSettingsStore((s) => s.settings.currency);
@@ -90,12 +90,16 @@ export default function AnalyticsScreen() {
     { key: 'month', label: 'شهر' },
     { key: 'all', label: 'الكل' },
   ];
+  const chartWidth = Math.max(240, Math.min(width - Spacing.base * 4, isCompact ? width - Spacing.base * 4 : 440));
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background, paddingTop: insets.top }]}>
       {/* Header */}
       <View style={[styles.header, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
-        <Text style={[styles.headerTitle, { color: colors.text }]}>الإحصائيات</Text>
+        <View style={styles.headerTitleGroup}>
+          <Text style={[styles.headerTitle, { color: colors.text }]}>الإحصائيات</Text>
+          <CurrentDateBadge />
+        </View>
         <View style={styles.periodTabs}>
           {periods.map((p) => (
             <Pressable
@@ -117,9 +121,9 @@ export default function AnalyticsScreen() {
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
         {/* Stats Cards Row */}
-        <View style={styles.statsRow}>
+        <View style={[styles.statsRow, isCompact && styles.wrappingRow]}>
           {/* Revenue */}
-          <Animated.View entering={FadeInDown.duration(300).delay(0)} style={styles.statCardWrapper}>
+          <Animated.View entering={FadeInDown.duration(300).delay(0)} style={[styles.statCardWrapper, isCompact && styles.statCardWrapperCompact]}>
             <LinearGradient
               colors={['rgba(99,102,241,0.15)', 'rgba(99,102,241,0.05)']}
               style={[styles.statCard, { borderColor: 'rgba(99,102,241,0.2)' }]}
@@ -135,7 +139,7 @@ export default function AnalyticsScreen() {
           </Animated.View>
 
           {/* Profit */}
-          <Animated.View entering={FadeInDown.duration(300).delay(100)} style={styles.statCardWrapper}>
+          <Animated.View entering={FadeInDown.duration(300).delay(100)} style={[styles.statCardWrapper, isCompact && styles.statCardWrapperCompact]}>
             <LinearGradient
               colors={['rgba(16,185,129,0.15)', 'rgba(16,185,129,0.05)']}
               style={[styles.statCard, { borderColor: 'rgba(16,185,129,0.2)' }]}
@@ -151,7 +155,7 @@ export default function AnalyticsScreen() {
           </Animated.View>
 
           {/* Invoices */}
-          <Animated.View entering={FadeInDown.duration(300).delay(200)} style={styles.statCardWrapper}>
+          <Animated.View entering={FadeInDown.duration(300).delay(200)} style={[styles.statCardWrapper, isCompact && styles.statCardWrapperCompact]}>
             <LinearGradient
               colors={['rgba(167,139,250,0.15)', 'rgba(167,139,250,0.05)']}
               style={[styles.statCard, { borderColor: 'rgba(167,139,250,0.2)' }]}
@@ -167,7 +171,7 @@ export default function AnalyticsScreen() {
           </Animated.View>
 
           {/* Outstanding */}
-          <Animated.View entering={FadeInDown.duration(300).delay(300)} style={styles.statCardWrapper}>
+          <Animated.View entering={FadeInDown.duration(300).delay(300)} style={[styles.statCardWrapper, isCompact && styles.statCardWrapperCompact]}>
             <LinearGradient
               colors={['rgba(245,158,11,0.15)', 'rgba(245,158,11,0.05)']}
               style={[styles.statCard, { borderColor: 'rgba(245,158,11,0.2)' }]}
@@ -184,9 +188,9 @@ export default function AnalyticsScreen() {
         </View>
 
         {/* Chart + Top Products Row */}
-        <View style={styles.chartsRow}>
+        <View style={[styles.chartsRow, isCompact && styles.stackedColumn]}>
           {/* Sales Chart */}
-          <Animated.View entering={FadeInUp.duration(400).delay(200)} style={[styles.chartCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+          <Animated.View entering={FadeInUp.duration(400).delay(200)} style={[styles.chartCard, isCompact && styles.fullWidthCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
             <Text style={[styles.chartTitle, { color: colors.text }]}>
               <MaterialCommunityIcons name="chart-bar" size={18} color={colors.primary} />
               {'  '}حركة المبيعات
@@ -194,8 +198,8 @@ export default function AnalyticsScreen() {
             {chartData.length > 0 ? (
               <BarChart
                 data={chartData}
-                barWidth={isTablet ? 28 : 20}
-                spacing={isTablet ? 16 : 10}
+                barWidth={isCompact ? 20 : 28}
+                spacing={isCompact ? 10 : 16}
                 noOfSections={4}
                 barBorderRadius={6}
                 yAxisThickness={0}
@@ -207,7 +211,7 @@ export default function AnalyticsScreen() {
                 isAnimated
                 animationDuration={500}
                 height={160}
-                width={isTablet ? 440 : 280}
+                width={chartWidth}
               />
             ) : (
               <View style={styles.noDataChart}>
@@ -218,7 +222,7 @@ export default function AnalyticsScreen() {
           </Animated.View>
 
           {/* Top Products */}
-          <Animated.View entering={FadeInUp.duration(400).delay(300)} style={[styles.topCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+          <Animated.View entering={FadeInUp.duration(400).delay(300)} style={[styles.topCard, isCompact && styles.fullWidthCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
             <Text style={[styles.chartTitle, { color: colors.text }]}>
               <MaterialCommunityIcons name="fire" size={18} color={colors.danger} />
               {'  '}الأكثر مبيعاً
@@ -253,7 +257,7 @@ export default function AnalyticsScreen() {
         </View>
 
         {/* Extra Stats Row */}
-        <Animated.View entering={FadeInUp.duration(400).delay(400)} style={styles.extraStats}>
+        <Animated.View entering={FadeInUp.duration(400).delay(400)} style={[styles.extraStats, isCompact && styles.stackedColumn]}>
           <View style={[styles.extraCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
             <MaterialCommunityIcons name="cart-arrow-down" size={20} color={colors.primary} />
             <Text style={[styles.extraLabel, { color: colors.textSecondary }]}>إجمالي القطع المباعة</Text>
@@ -290,9 +294,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.base,
     paddingVertical: Spacing.md,
     borderBottomWidth: 1,
+    gap: Spacing.md,
+    flexWrap: 'wrap',
   },
+  headerTitleGroup: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, flexWrap: 'wrap' },
   headerTitle: { fontSize: Typography.fontSize.lg, fontWeight: '700' },
-  periodTabs: { flexDirection: 'row', gap: Spacing.xs },
+  periodTabs: { flexDirection: 'row', gap: Spacing.xs, flexWrap: 'wrap' },
   periodTab: {
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.xs,
@@ -306,6 +313,8 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.base,
   },
   statCardWrapper: { flex: 1 },
+  wrappingRow: { flexWrap: 'wrap' },
+  statCardWrapperCompact: { minWidth: '47%' },
   statCard: {
     padding: Spacing.base,
     borderRadius: BorderRadius.xl,
@@ -327,17 +336,24 @@ const styles = StyleSheet.create({
     gap: Spacing.md,
     marginBottom: Spacing.base,
   },
+  stackedColumn: {
+    flexDirection: 'column',
+  },
   chartCard: {
-    flex: isTablet ? 0.6 : 0.55,
+    flex: 0.6,
     borderRadius: BorderRadius.xl,
     borderWidth: 1,
     padding: Spacing.base,
   },
   topCard: {
-    flex: isTablet ? 0.4 : 0.45,
+    flex: 0.4,
     borderRadius: BorderRadius.xl,
     borderWidth: 1,
     padding: Spacing.base,
+  },
+  fullWidthCard: {
+    flex: 1,
+    width: '100%',
   },
   chartTitle: {
     fontSize: Typography.fontSize.base,

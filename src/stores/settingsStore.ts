@@ -15,7 +15,7 @@ interface SettingsState {
 
 const defaultSettings: Settings = {
   id: 1,
-  store_name: 'محل المدخنات',
+  store_name: 'smoking',
   phone: '',
   logo_uri: '',
   tax_enabled: false,

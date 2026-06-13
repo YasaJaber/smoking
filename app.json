@@ -47,8 +47,7 @@
             "usesCleartextTraffic": true
           }
         }
-      ],
-      "expo-sharing"
+      ]
     ],
     "extra": {
       "router": {},

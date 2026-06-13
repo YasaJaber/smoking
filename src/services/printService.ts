@@ -62,7 +62,7 @@ export async function shareInvoicePdf(
     await Sharing.shareAsync(uri, {
       UTI: 'com.adobe.pdf',
       mimeType: 'application/pdf',
-      dialogTitle: `فاتورة ${generateInvoiceNumber(invoice.invoice_number)}`,
+      dialogTitle: `فاتورة ${invoice.invoice_name || generateInvoiceNumber(invoice.invoice_number)}`,
     });
   }
 

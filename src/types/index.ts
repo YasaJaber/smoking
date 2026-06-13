@@ -61,6 +61,7 @@ export interface Product {
 export interface Invoice {
   id: string;
   invoice_number: number;
+  invoice_name: string | null;
   user_id: string;
   subtotal: number;
   tax_amount: number;
@@ -76,7 +77,7 @@ export interface Invoice {
 export interface InvoiceItem {
   id: string;
   invoice_id: string;
-  product_id: string;
+  product_id: string | null;
   product_name: string;
   quantity: number;
   unit_cost: number;
@@ -89,6 +90,8 @@ export interface CartItem {
   product: Product;
   quantity: number;
   total: number;
+  /** Ad-hoc line item — recorded on the invoice only, not tied to inventory */
+  isCustom?: boolean;
 }
 
 export interface SyncLog {

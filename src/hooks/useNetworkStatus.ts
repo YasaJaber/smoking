@@ -18,14 +18,21 @@ export function useNetworkStatus() {
   const wasOnline = useRef<boolean>(true);
 
   useEffect(() => {
+    let cancelled = false;
+
     // Initial state + status refresh
-    NetInfo.fetch().then((state) => {
-      const online = Boolean(state.isConnected && state.isInternetReachable !== false);
-      wasOnline.current = online;
-      setOnline(online);
-      refreshStatus();
-      if (online) sync(true);
-    });
+    NetInfo.fetch()
+      .then((state) => {
+        if (cancelled) return;
+        const online = Boolean(state.isConnected && state.isInternetReachable !== false);
+        wasOnline.current = online;
+        setOnline(online);
+        refreshStatus();
+        if (online) sync(true);
+      })
+      .catch((error) => {
+        console.error('Error reading network status:', error);
+      });
 
     const unsubscribe = NetInfo.addEventListener((state) => {
       const online = Boolean(state.isConnected && state.isInternetReachable !== false);
@@ -43,6 +50,7 @@ export function useNetworkStatus() {
     }, APP_CONFIG.syncIntervalMs);
 
     return () => {
+      cancelled = true;
       unsubscribe();
       clearInterval(interval);
     };

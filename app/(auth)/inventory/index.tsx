@@ -13,7 +13,7 @@ import {
   Alert,
   Modal,
   ScrollView,
-  Dimensions,
+  useWindowDimensions,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -21,6 +21,7 @@ import * as Haptics from 'expo-haptics';
 import Animated, { FadeInDown, FadeIn, SlideInDown } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from 'expo-router';
+import { CurrentDateBadge } from '../../../src/components/common/CurrentDateBadge';
 import {
   getAllProducts,
   getAllCategories,
@@ -35,11 +36,11 @@ import { formatCurrency } from '../../../src/utils/formatters';
 import { Colors, Gradients, Typography, Spacing, BorderRadius, CategoryColors } from '../../../src/constants/theme';
 import type { Product, Category } from '../../../src/types';
 
-const { width } = Dimensions.get('window');
-const isTablet = width >= 768;
-
 export default function InventoryScreen() {
   const insets = useSafeAreaInsets();
+  const { width } = useWindowDimensions();
+  const isCompact = width < 768;
+  const modalWidth = Math.min(width - Spacing.base * 2, isCompact ? 360 : 480);
   const darkMode = useSettingsStore((s) => s.settings.dark_mode);
   const colors = darkMode ? Colors.dark : Colors.light;
   const currency = useSettingsStore((s) => s.settings.currency);
@@ -148,6 +149,7 @@ export default function InventoryScreen() {
       setShowProductModal(false);
       await loadProducts();
     } catch (error) {
+      console.error('Error saving product:', error);
       Alert.alert('خطأ', 'حدث خطأ أثناء حفظ المنتج');
     }
   };
@@ -243,6 +245,7 @@ export default function InventoryScreen() {
       {/* Header */}
       <View style={[styles.header, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
         <Text style={[styles.headerTitle, { color: colors.text }]}>إدارة المخزون</Text>
+        <CurrentDateBadge />
         <View style={styles.headerActions}>
           <Pressable
             onPress={() => setShowCategoryModal(true)}
@@ -340,7 +343,7 @@ export default function InventoryScreen() {
       {/* Product Modal */}
       <Modal visible={showProductModal} transparent animationType="fade" onRequestClose={() => setShowProductModal(false)}>
         <View style={[styles.modalOverlay, { backgroundColor: colors.overlay }]}>
-          <Animated.View entering={SlideInDown.duration(300)} style={[styles.modal, { backgroundColor: colors.surface }]}>
+          <Animated.View entering={SlideInDown.duration(300)} style={[styles.modal, { width: modalWidth, backgroundColor: colors.surface }]}>
             <View style={styles.modalHeader}>
               <Text style={[styles.modalTitle, { color: colors.text }]}>
                 {editingProduct ? 'تعديل المنتج' : 'منتج جديد'}
@@ -462,7 +465,7 @@ export default function InventoryScreen() {
       {/* Category Modal */}
       <Modal visible={showCategoryModal} transparent animationType="fade" onRequestClose={() => setShowCategoryModal(false)}>
         <View style={[styles.modalOverlay, { backgroundColor: colors.overlay }]}>
-          <Animated.View entering={SlideInDown.duration(300)} style={[styles.modal, styles.smallModal, { backgroundColor: colors.surface }]}>
+          <Animated.View entering={SlideInDown.duration(300)} style={[styles.modal, styles.smallModal, { width: modalWidth, backgroundColor: colors.surface }]}>
             <View style={styles.modalHeader}>
               <Text style={[styles.modalTitle, { color: colors.text }]}>قسم جديد</Text>
               <Pressable onPress={() => setShowCategoryModal(false)}>
@@ -521,9 +524,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.base,
     paddingVertical: Spacing.md,
     borderBottomWidth: 1,
+    gap: Spacing.md,
+    flexWrap: 'wrap',
   },
-  headerTitle: { fontSize: Typography.fontSize.lg, fontWeight: '700' },
-  headerActions: { flexDirection: 'row', gap: Spacing.sm },
+  headerTitle: { fontSize: Typography.fontSize.lg, fontWeight: '700', flexShrink: 1 },
+  headerActions: { flexDirection: 'row', gap: Spacing.sm, flexWrap: 'wrap' },
   headerBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -569,6 +574,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     gap: Spacing.md,
     marginBottom: Spacing.sm,
+    flexWrap: 'wrap',
   },
   productIcon: {
     width: 44,
@@ -580,7 +586,7 @@ const styles = StyleSheet.create({
   productInfo: { flex: 1 },
   prodName: { fontSize: Typography.fontSize.sm, fontWeight: '600' },
   prodCategory: { fontSize: Typography.fontSize.xs, marginTop: 2 },
-  productPrices: { alignItems: 'flex-end' },
+  productPrices: { alignItems: 'flex-end', minWidth: 96 },
   sellPrice: { fontSize: Typography.fontSize.sm, fontWeight: '700' },
   costPrice: { fontSize: Typography.fontSize.xs, marginTop: 2 },
   productMeta: { alignItems: 'center', gap: Spacing.xs },
@@ -597,7 +603,7 @@ const styles = StyleSheet.create({
   emptyText: { fontSize: Typography.fontSize.base },
   // Modal styles
   modalOverlay: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  modal: { width: isTablet ? 480 : 360, maxHeight: '85%', borderRadius: BorderRadius['2xl'], padding: Spacing.xl },
+  modal: { maxWidth: '100%', maxHeight: '85%', borderRadius: BorderRadius['2xl'], padding: Spacing.xl },
   smallModal: { maxHeight: '60%' },
   modalHeader: {
     flexDirection: 'row',
@@ -623,8 +629,8 @@ const styles = StyleSheet.create({
     marginRight: Spacing.sm,
   },
   catOptionText: { fontSize: Typography.fontSize.sm, fontWeight: '600' },
-  row: { flexDirection: 'row', gap: Spacing.md },
-  halfField: { flex: 1 },
+  row: { flexDirection: 'row', gap: Spacing.md, flexWrap: 'wrap' },
+  halfField: { flex: 1, minWidth: 120 },
   profitPreview: {
     flexDirection: 'row',
     alignItems: 'center',

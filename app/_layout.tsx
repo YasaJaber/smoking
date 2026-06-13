@@ -5,7 +5,8 @@
 import React, { useEffect, useState } from 'react';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { View, ActivityIndicator, StyleSheet } from 'react-native';
+import { View, ActivityIndicator, StyleSheet, Platform } from 'react-native';
+import * as NavigationBar from 'expo-navigation-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { initializeDatabase } from '../src/db/client';
 import { seedDatabase } from '../src/db/seed';
@@ -18,9 +19,6 @@ export default function RootLayout() {
   const loadSettings = useSettingsStore((s) => s.loadSettings);
   const darkMode = useSettingsStore((s) => s.settings.dark_mode);
   const colors = darkMode ? Colors.dark : Colors.light;
-
-  // Connectivity monitoring + auto-sync (on start, reconnect, and interval)
-  useNetworkStatus();
 
   useEffect(() => {
     async function prepare() {
@@ -44,6 +42,26 @@ export default function RootLayout() {
       </View>
     );
   }
+
+  return <ReadyApp darkMode={darkMode} colors={colors} />;
+}
+
+interface ReadyAppProps {
+  darkMode: boolean;
+  colors: typeof Colors.dark | typeof Colors.light;
+}
+
+function ReadyApp({ darkMode, colors }: ReadyAppProps) {
+  // Connectivity monitoring + auto-sync starts only after SQLite is ready.
+  useNetworkStatus();
+
+  // Hide the Android navigation bar for immersive full-screen mode
+  useEffect(() => {
+    if (Platform.OS === 'android') {
+      NavigationBar.setBehaviorAsync('inset-swipe');
+      NavigationBar.setVisibilityAsync('hidden');
+    }
+  }, []);
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>

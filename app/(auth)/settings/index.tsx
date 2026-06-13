@@ -12,7 +12,7 @@ import {
   Pressable,
   Switch,
   Alert,
-  Dimensions,
+  useWindowDimensions,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -22,13 +22,11 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useSettingsStore } from '../../../src/stores/settingsStore';
 import { useAuthStore } from '../../../src/stores/authStore';
 import { useSyncStore } from '../../../src/stores/syncStore';
+import { CurrentDateBadge } from '../../../src/components/common/CurrentDateBadge';
 import { getDatabase } from '../../../src/db/client';
 import { formatDateTime } from '../../../src/utils/formatters';
 import { Colors, Gradients, Typography, Spacing, BorderRadius } from '../../../src/constants/theme';
 import { router } from 'expo-router';
-
-const { width } = Dimensions.get('window');
-const isTablet = width >= 768;
 
 type ThemeColors = typeof Colors.dark | typeof Colors.light;
 
@@ -76,6 +74,8 @@ const SettingRow = ({
 
 export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
+  const { width } = useWindowDimensions();
+  const isCompact = width < 768;
   const { settings, updateSettings } = useSettingsStore();
   const { logout } = useAuthStore();
   const syncStatus = useSyncStore((s) => s.status);
@@ -157,6 +157,7 @@ export default function SettingsScreen() {
       {/* Header */}
       <View style={[styles.header, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
         <Text style={[styles.headerTitle, { color: colors.text }]}>الإعدادات</Text>
+        <CurrentDateBadge />
         <Pressable onPress={handleSave}>
           <LinearGradient
             colors={Gradients.primary as unknown as readonly [string, string, ...string[]]}
@@ -174,7 +175,7 @@ export default function SettingsScreen() {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
       >
-        <View style={styles.columns}>
+        <View style={[styles.columns, isCompact && styles.columnsCompact]}>
           {/* Left Column */}
           <View style={styles.column}>
             {/* Store Info */}
@@ -361,6 +362,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.base,
     paddingVertical: Spacing.md,
     borderBottomWidth: 1,
+    gap: Spacing.md,
+    flexWrap: 'wrap',
   },
   headerTitle: { fontSize: Typography.fontSize.lg, fontWeight: '700' },
   saveBtn: {
@@ -374,6 +377,7 @@ const styles = StyleSheet.create({
   saveBtnText: { color: '#fff', fontSize: Typography.fontSize.sm, fontWeight: '600' },
   scrollContent: { padding: Spacing.base },
   columns: { flexDirection: 'row', gap: Spacing.md },
+  columnsCompact: { flexDirection: 'column' },
   column: { flex: 1, gap: Spacing.md },
   section: {
     borderRadius: BorderRadius.xl,
@@ -394,9 +398,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.base,
     paddingVertical: Spacing.md,
     borderTopWidth: 1,
+    gap: Spacing.sm,
+    flexWrap: 'wrap',
   },
   settingLabel: { fontSize: Typography.fontSize.sm, fontWeight: '500', flex: 1 },
-  settingValue: { flex: 1, alignItems: 'flex-end' },
+  settingValue: { flex: 1, minWidth: 160, alignItems: 'stretch' },
   input: {
     borderWidth: 1,
     borderRadius: BorderRadius.md,

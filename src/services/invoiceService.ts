@@ -5,6 +5,23 @@
 import { getDatabase, generateId } from '../db/client';
 import type { Invoice, InvoiceItem, CartItem } from '../types';
 
+export interface InvoiceDaySummary {
+  count: number;
+  subtotal: number;
+  taxAmount: number;
+  total: number;
+  amountPaid: number;
+  amountDue: number;
+}
+
+function getLocalDayBounds(dateKey: string): [string, string] {
+  const [year, month, day] = dateKey.split('-').map(Number);
+  const start = new Date(year, month - 1, day);
+  const end = new Date(year, month - 1, day + 1);
+
+  return [start.toISOString(), end.toISOString()];
+}
+
 /**
  * Get the next invoice number
  */
@@ -26,7 +43,8 @@ export async function createInvoice(
   taxAmount: number,
   total: number,
   userId: string,
-  amountPaid: number
+  amountPaid: number,
+  invoiceName?: string
 ): Promise<Invoice> {
   const db = await getDatabase();
   const invoiceId = generateId();
@@ -34,6 +52,7 @@ export async function createInvoice(
   const now = new Date().toISOString();
   const amountDue = Math.max(0, total - amountPaid);
   const status = amountDue > 0 ? 'partial' : 'completed';
+  const normalizedInvoiceName = invoiceName?.trim() || null;
 
   // Start transaction
   await db.execAsync('BEGIN TRANSACTION');
@@ -41,21 +60,35 @@ export async function createInvoice(
   try {
     // Insert invoice
     await db.runAsync(
-      `INSERT INTO invoices (id, invoice_number, user_id, subtotal, tax_amount, total, amount_paid, amount_due, payment_method, status, synced, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'cash', ?, 0, ?)`,
-      [invoiceId, invoiceNumber, userId, subtotal, taxAmount, total, amountPaid, amountDue, status, now]
+      `INSERT INTO invoices (id, invoice_number, invoice_name, user_id, subtotal, tax_amount, total, amount_paid, amount_due, payment_method, status, synced, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'cash', ?, 0, ?)`,
+      [
+        invoiceId,
+        invoiceNumber,
+        normalizedInvoiceName,
+        userId,
+        subtotal,
+        taxAmount,
+        total,
+        amountPaid,
+        amountDue,
+        status,
+        now,
+      ]
     );
 
-    // Insert invoice items and update stock
+    // Insert invoice items; only inventory products affect stock
     for (const item of cartItems) {
       const itemId = generateId();
+      const isCustom = item.isCustom === true;
+
       await db.runAsync(
         `INSERT INTO invoice_items (id, invoice_id, product_id, product_name, quantity, unit_cost, unit_price, total, created_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           itemId,
           invoiceId,
-          item.product.id,
+          isCustom ? null : item.product.id,
           item.product.name,
           item.quantity,
           item.product.cost_price,
@@ -65,11 +98,12 @@ export async function createInvoice(
         ]
       );
 
-      // Decrease product stock (mark unsynced so the new quantity is pushed)
-      await db.runAsync(
-        'UPDATE products SET quantity = MAX(0, quantity - ?), synced = 0, updated_at = ? WHERE id = ?',
-        [item.quantity, now, item.product.id]
-      );
+      if (!isCustom) {
+        await db.runAsync(
+          'UPDATE products SET quantity = MAX(0, quantity - ?), synced = 0, updated_at = ? WHERE id = ?',
+          [item.quantity, now, item.product.id]
+        );
+      }
     }
 
     // Log sync
@@ -83,6 +117,7 @@ export async function createInvoice(
     return {
       id: invoiceId,
       invoice_number: invoiceNumber,
+      invoice_name: normalizedInvoiceName,
       user_id: userId,
       subtotal,
       tax_amount: taxAmount,
@@ -170,12 +205,67 @@ export async function getRecentInvoices(limit: number = 20): Promise<Invoice[]> 
 }
 
 /**
+ * Get all invoices created during a local calendar day
+ */
+export async function getInvoicesByDate(dateKey: string): Promise<Invoice[]> {
+  const db = await getDatabase();
+  const [start, end] = getLocalDayBounds(dateKey);
+
+  return db.getAllAsync<Invoice>(
+    'SELECT * FROM invoices WHERE created_at >= ? AND created_at < ? ORDER BY created_at DESC',
+    [start, end]
+  );
+}
+
+/**
+ * Get invoice totals for a local calendar day
+ */
+export async function getInvoiceDaySummary(dateKey: string): Promise<InvoiceDaySummary> {
+  const db = await getDatabase();
+  const [start, end] = getLocalDayBounds(dateKey);
+  const result = await db.getFirstAsync<{
+    count: number;
+    subtotal: number;
+    taxAmount: number;
+    total: number;
+    amountPaid: number;
+    amountDue: number;
+  }>(
+    `SELECT
+      COUNT(*) as count,
+      COALESCE(SUM(subtotal), 0) as subtotal,
+      COALESCE(SUM(tax_amount), 0) as taxAmount,
+      COALESCE(SUM(total), 0) as total,
+      COALESCE(SUM(amount_paid), 0) as amountPaid,
+      COALESCE(SUM(amount_due), 0) as amountDue
+    FROM invoices
+    WHERE status != 'refunded'
+      AND created_at >= ?
+      AND created_at < ?`,
+    [start, end]
+  );
+
+  return result || {
+    count: 0,
+    subtotal: 0,
+    taxAmount: 0,
+    total: 0,
+    amountPaid: 0,
+    amountDue: 0,
+  };
+}
+
+/**
  * Get today's invoices count and total
  */
 export async function getTodaySummary(): Promise<{ count: number; total: number }> {
-  const db = await getDatabase();
-  const result = await db.getFirstAsync<{ count: number; total: number }>(
-    "SELECT COUNT(*) as count, COALESCE(SUM(total), 0) as total FROM invoices WHERE date(created_at) = date('now') AND status != 'refunded'"
-  );
-  return result || { count: 0, total: 0 };
+  const today = new Date();
+  const dateKey = [
+    today.getFullYear(),
+    String(today.getMonth() + 1).padStart(2, '0'),
+    String(today.getDate()).padStart(2, '0'),
+  ].join('-');
+  const summary = await getInvoiceDaySummary(dateKey);
+
+  return { count: summary.count, total: summary.total };
 }

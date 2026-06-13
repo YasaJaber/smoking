@@ -6,10 +6,11 @@ import React from 'react';
 import { View, Text, ScrollView, Pressable, StyleSheet } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import Animated, { FadeIn } from 'react-native-reanimated';
 import { Colors, Typography, Spacing, BorderRadius } from '../../constants/theme';
 import { useSettingsStore } from '../../stores/settingsStore';
 import type { Category } from '../../types';
+
+const CHIP_HEIGHT = 34;
 
 interface CategoryBarProps {
   categories: Category[];
@@ -27,11 +28,13 @@ export function CategoryBar({ categories, selectedId, onSelect }: CategoryBarPro
   };
 
   return (
-    <ScrollView
-      horizontal
-      showsHorizontalScrollIndicator={false}
-      contentContainerStyle={styles.container}
-    >
+    <View style={styles.wrapper}>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={styles.scroll}
+        contentContainerStyle={styles.container}
+      >
       {/* All button */}
       <Pressable
         onPress={() => handlePress(null)}
@@ -45,7 +48,7 @@ export function CategoryBar({ categories, selectedId, onSelect }: CategoryBarPro
       >
         <MaterialCommunityIcons
           name="view-grid"
-          size={18}
+          size={15}
           color={selectedId === null ? '#fff' : colors.textSecondary}
         />
         <Text
@@ -53,6 +56,7 @@ export function CategoryBar({ categories, selectedId, onSelect }: CategoryBarPro
             styles.chipText,
             { color: selectedId === null ? '#fff' : colors.textSecondary },
           ]}
+          numberOfLines={1}
         >
           الكل
         </Text>
@@ -74,7 +78,7 @@ export function CategoryBar({ categories, selectedId, onSelect }: CategoryBarPro
           >
             <MaterialCommunityIcons
               name={(cat.icon as any) || 'folder'}
-              size={18}
+              size={15}
               color={isActive ? '#fff' : cat.color}
             />
             <Text
@@ -82,33 +86,47 @@ export function CategoryBar({ categories, selectedId, onSelect }: CategoryBarPro
                 styles.chipText,
                 { color: isActive ? '#fff' : colors.text },
               ]}
+              numberOfLines={1}
             >
               {cat.name}
             </Text>
           </Pressable>
         );
       })}
-    </ScrollView>
+      </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  wrapper: {
+    flexGrow: 0,
+    flexShrink: 0,
+  },
+  scroll: {
+    flexGrow: 0,
+    maxHeight: CHIP_HEIGHT + Spacing.xs * 2,
+  },
   container: {
+    alignItems: 'center',
     paddingHorizontal: Spacing.base,
-    paddingVertical: Spacing.sm,
-    gap: Spacing.sm,
+    paddingVertical: Spacing.xs,
+    gap: Spacing.xs,
   },
   chip: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: Spacing.base,
-    paddingVertical: Spacing.sm,
-    borderRadius: BorderRadius.full,
+    justifyContent: 'center',
+    alignSelf: 'flex-start',
+    height: CHIP_HEIGHT,
+    paddingHorizontal: Spacing.md,
+    borderRadius: BorderRadius.sm,
     borderWidth: 1,
     gap: Spacing.xs,
   },
   chipText: {
-    fontSize: Typography.fontSize.sm,
+    fontSize: Typography.fontSize.xs,
     fontWeight: '600',
+    lineHeight: 14,
   },
 });

@@ -35,7 +35,7 @@ interface SyncPayload {
 const TABLE_COLUMNS: Record<string, string[]> = {
   categories: ['id', 'name', 'icon', 'color', 'sort_order', 'is_active', 'synced', 'created_at', 'updated_at'],
   products: ['id', 'category_id', 'name', 'barcode', 'cost_price', 'sell_price', 'quantity', 'min_quantity', 'image_uri', 'is_active', 'synced', 'created_at', 'updated_at'],
-  invoices: ['id', 'invoice_number', 'user_id', 'subtotal', 'tax_amount', 'total', 'amount_paid', 'amount_due', 'payment_method', 'status', 'synced', 'created_at'],
+  invoices: ['id', 'invoice_number', 'invoice_name', 'user_id', 'subtotal', 'tax_amount', 'total', 'amount_paid', 'amount_due', 'payment_method', 'status', 'synced', 'created_at'],
   invoice_items: ['id', 'invoice_id', 'product_id', 'product_name', 'quantity', 'unit_cost', 'unit_price', 'total', 'created_at'],
 };
 
@@ -91,9 +91,15 @@ async function fetchWithTimeout(url: string, init: RequestInit): Promise<Respons
 async function collectLocalChanges() {
   const db = await getDatabase();
 
-  const categories = await db.getAllAsync<any>('SELECT * FROM categories WHERE synced = 0');
-  const products = await db.getAllAsync<any>('SELECT * FROM products WHERE synced = 0');
-  const invoices = await db.getAllAsync<any>('SELECT * FROM invoices WHERE synced = 0');
+  const categories = await db.getAllAsync<any>(
+    `SELECT ${TABLE_COLUMNS.categories.join(', ')} FROM categories WHERE synced = 0`
+  );
+  const products = await db.getAllAsync<any>(
+    `SELECT ${TABLE_COLUMNS.products.join(', ')} FROM products WHERE synced = 0`
+  );
+  const invoices = await db.getAllAsync<any>(
+    `SELECT ${TABLE_COLUMNS.invoices.join(', ')} FROM invoices WHERE synced = 0`
+  );
 
   let invoice_items: any[] = [];
   if (invoices.length > 0) {

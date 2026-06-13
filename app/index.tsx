@@ -9,8 +9,8 @@ import {
   Text,
   StyleSheet,
   Pressable,
-  Dimensions,
-  Animated as RNAnimated,
+  ScrollView,
+  useWindowDimensions,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
@@ -29,13 +29,14 @@ import Animated, {
 import { useAuthStore } from '../src/stores/authStore';
 import { Colors, Gradients, Typography, Spacing, BorderRadius } from '../src/constants/theme';
 
-const { width, height } = Dimensions.get('window');
-const isTablet = width >= 768;
-
 const PIN_LENGTH = 4;
 const PIN_KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '', '0', 'delete'];
 
 export default function LoginScreen() {
+  const { width, height } = useWindowDimensions();
+  const isCompact = width < 768;
+  const keySize = width >= 768 ? 76 : width >= 360 ? 66 : 58;
+  const keypadWidth = keySize * 3 + Spacing.md * 2;
   const [pin, setPin] = useState('');
   const { login, error, isLoading, clearError } = useAuthStore();
   const colors = Colors.dark;
@@ -97,13 +98,23 @@ export default function LoginScreen() {
       <View style={[styles.decorCircle, styles.decorCircle1]} />
       <View style={[styles.decorCircle, styles.decorCircle2]} />
 
-      <View style={styles.content}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={[
+          styles.content,
+          { minHeight: height },
+          isCompact && styles.contentCompact,
+        ]}
+      >
         {/* Left side - Branding */}
-        <Animated.View entering={FadeInDown.duration(600).delay(100)} style={styles.brandSection}>
+        <Animated.View
+          entering={FadeInDown.duration(600).delay(100)}
+          style={[styles.brandSection, isCompact && styles.brandSectionCompact]}
+        >
           <View style={styles.logoContainer}>
             <LinearGradient
               colors={Gradients.primary as unknown as readonly [string, string, ...string[]]}
-              style={styles.logoGradient}
+              style={[styles.logoGradient, isCompact && styles.logoGradientCompact]}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
             >
@@ -117,7 +128,10 @@ export default function LoginScreen() {
         </Animated.View>
 
         {/* Right side - PIN Pad */}
-        <Animated.View entering={FadeInUp.duration(600).delay(200)} style={styles.pinSection}>
+        <Animated.View
+          entering={FadeInUp.duration(600).delay(200)}
+          style={[styles.pinSection, isCompact && styles.pinSectionCompact]}
+        >
           {/* PIN Dots */}
           <Text style={[styles.pinLabel, { color: colors.textSecondary }]}>
             أدخل رمز الدخول
@@ -151,12 +165,13 @@ export default function LoginScreen() {
           )}
 
           {/* Number Pad */}
-          <View style={styles.keypad}>
+          <View style={[styles.keypad, { width: keypadWidth }]}>
             {PIN_KEYS.map((key, index) => (
               <Pressable
                 key={index}
                 style={({ pressed }) => [
                   styles.key,
+                  { width: keySize, height: isCompact ? keySize : 58 },
                   {
                     backgroundColor: pressed
                       ? colors.surfaceLight
@@ -190,7 +205,7 @@ export default function LoginScreen() {
             المدير: 1234 • الكاشير: 0000
           </Text>
         </Animated.View>
-      </View>
+      </ScrollView>
     </View>
   );
 }
@@ -200,12 +215,19 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   content: {
-    flex: 1,
+    flexGrow: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: Spacing['3xl'],
-    gap: isTablet ? 80 : 40,
+    paddingVertical: Spacing['3xl'],
+    gap: 80,
+  },
+  contentCompact: {
+    flexDirection: 'column',
+    paddingHorizontal: Spacing.base,
+    paddingVertical: Spacing['2xl'],
+    gap: Spacing['2xl'],
   },
   decorCircle: {
     position: 'absolute',
@@ -228,7 +250,10 @@ const styles = StyleSheet.create({
   },
   brandSection: {
     alignItems: 'center',
-    flex: isTablet ? 0.4 : 0.35,
+    flex: 0.4,
+  },
+  brandSectionCompact: {
+    flex: 0,
   },
   logoContainer: {
     marginBottom: Spacing.lg,
@@ -239,6 +264,10 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius['2xl'],
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  logoGradientCompact: {
+    width: 78,
+    height: 78,
   },
   appName: {
     fontSize: Typography.fontSize['3xl'],
@@ -252,7 +281,10 @@ const styles = StyleSheet.create({
   },
   pinSection: {
     alignItems: 'center',
-    flex: isTablet ? 0.35 : 0.45,
+    flex: 0.35,
+  },
+  pinSectionCompact: {
+    flex: 0,
   },
   pinLabel: {
     fontSize: Typography.fontSize.base,
@@ -279,12 +311,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'center',
-    width: isTablet ? 280 : 240,
     gap: Spacing.md,
   },
   key: {
-    width: isTablet ? 76 : 66,
-    height: isTablet ? 58 : 50,
     borderRadius: BorderRadius.lg,
     justifyContent: 'center',
     alignItems: 'center',

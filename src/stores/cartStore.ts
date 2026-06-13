@@ -3,6 +3,7 @@
 // ============================================================
 
 import { create } from 'zustand';
+import { generateId } from '../db/client';
 import type { CartItem, Product } from '../types';
 
 interface CartState {
@@ -15,6 +16,7 @@ interface CartState {
 
   // Actions
   addItem: (product: Product) => void;
+  addCustomItem: (name: string, sellPrice: number, quantity: number) => void;
   removeItem: (productId: string) => void;
   updateQuantity: (productId: string, quantity: number) => void;
   incrementItem: (productId: string) => void;
@@ -59,6 +61,41 @@ export const useCartStore = create<CartState>((set, get) => ({
         { product, quantity: 1, total: product.sell_price },
       ];
     }
+
+    set({ items: newItems, ...recalculate(newItems, taxEnabled, taxRate) });
+  },
+
+  addCustomItem: (name: string, sellPrice: number, quantity: number) => {
+    const trimmedName = name.trim();
+    if (!trimmedName || sellPrice <= 0 || quantity <= 0) return;
+
+    const { items, taxEnabled, taxRate } = get();
+    const now = new Date().toISOString();
+    const customProduct: Product = {
+      id: generateId(),
+      category_id: '',
+      name: trimmedName,
+      barcode: null,
+      cost_price: 0,
+      sell_price: sellPrice,
+      quantity: 0,
+      min_quantity: 0,
+      image_uri: null,
+      is_active: true,
+      synced: false,
+      created_at: now,
+      updated_at: now,
+    };
+
+    const newItems: CartItem[] = [
+      ...items,
+      {
+        product: customProduct,
+        quantity,
+        total: sellPrice * quantity,
+        isCustom: true,
+      },
+    ];
 
     set({ items: newItems, ...recalculate(newItems, taxEnabled, taxRate) });
   },

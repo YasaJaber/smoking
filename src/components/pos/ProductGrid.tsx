@@ -2,19 +2,15 @@
 // ProductGrid - Grid display of products for POS
 // ============================================================
 
-import React, { useCallback } from 'react';
-import { View, Text, FlatList, Pressable, StyleSheet, Dimensions } from 'react-native';
+import React, { useCallback, useState } from 'react';
+import { View, Text, ScrollView, Pressable, StyleSheet } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import Animated, { FadeInUp } from 'react-native-reanimated';
-import { Colors, Typography, Spacing, BorderRadius, Shadows } from '../../constants/theme';
+import { Colors, Typography, Spacing, BorderRadius } from '../../constants/theme';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { formatCurrency } from '../../utils/formatters';
 import type { Product } from '../../types';
-
-const { width } = Dimensions.get('window');
-const isTablet = width >= 768;
-const NUM_COLUMNS = isTablet ? 4 : 3;
 
 interface ProductGridProps {
   products: Product[];
@@ -23,10 +19,20 @@ interface ProductGridProps {
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
-function ProductItem({ product, onPress, index }: {
+// Pick column count from the actual products-section width (not the whole
+// screen) so cards stay large instead of getting squeezed into the left pane.
+function getNumColumns(containerWidth: number): number {
+  if (containerWidth <= 0) return 2;
+  if (containerWidth >= 900) return 4;
+  if (containerWidth >= 620) return 3;
+  return 2;
+}
+
+function ProductItem({ product, onPress, index, cardWidth }: {
   product: Product;
   onPress: (product: Product) => void;
   index: number;
+  cardWidth: number;
 }) {
   const darkMode = useSettingsStore((s) => s.settings.dark_mode);
   const colors = darkMode ? Colors.dark : Colors.light;
@@ -42,19 +48,19 @@ function ProductItem({ product, onPress, index }: {
 
   return (
     <AnimatedPressable
-      entering={FadeInUp.duration(300).delay(index * 30)}
+      entering={FadeInUp.duration(250).delay(index * 20)}
       onPress={handlePress}
       style={({ pressed }) => [
         styles.productCard,
         {
+          width: cardWidth,
           backgroundColor: colors.surfaceLight,
           borderColor: colors.border,
-          opacity: isOutOfStock ? 0.5 : pressed ? 0.8 : 1,
-          transform: [{ scale: pressed && !isOutOfStock ? 0.96 : 1 }],
+          opacity: isOutOfStock ? 0.5 : pressed ? 0.85 : 1,
+          transform: [{ scale: pressed && !isOutOfStock ? 0.97 : 1 }],
         },
       ]}
     >
-      {/* Product Icon */}
       <View style={[styles.productIcon, { backgroundColor: colors.glass }]}>
         <MaterialCommunityIcons
           name="package-variant-closed"
@@ -63,37 +69,29 @@ function ProductItem({ product, onPress, index }: {
         />
       </View>
 
-      {/* Product Name */}
       <Text
         style={[styles.productName, { color: colors.text }]}
         numberOfLines={2}
+        ellipsizeMode="tail"
       >
         {product.name}
       </Text>
 
-      {/* Price */}
       <Text style={[styles.productPrice, { color: colors.primary }]}>
         {formatCurrency(product.sell_price, settings.currency)}
       </Text>
 
-      {/* Stock indicator */}
-      <View style={styles.stockRow}>
-        {isOutOfStock ? (
-          <View style={[styles.stockBadge, { backgroundColor: colors.dangerGlow }]}>
-            <Text style={[styles.stockText, { color: colors.danger }]}>نفد</Text>
-          </View>
-        ) : isLowStock ? (
-          <View style={[styles.stockBadge, { backgroundColor: 'rgba(251,191,36,0.15)' }]}>
-            <Text style={[styles.stockText, { color: colors.warning }]}>
-              {product.quantity} متبقي
-            </Text>
-          </View>
-        ) : (
-          <Text style={[styles.stockNormal, { color: colors.textMuted }]}>
-            المخزون: {product.quantity}
-          </Text>
-        )}
-      </View>
+      {isOutOfStock ? (
+        <Text style={[styles.stockText, { color: colors.danger }]}>نفد</Text>
+      ) : isLowStock ? (
+        <Text style={[styles.stockText, { color: colors.warning }]}>
+          {product.quantity}
+        </Text>
+      ) : (
+        <Text style={[styles.stockText, { color: colors.textMuted }]}>
+          {product.quantity}
+        </Text>
+      )}
     </AnimatedPressable>
   );
 }
@@ -101,6 +99,15 @@ function ProductItem({ product, onPress, index }: {
 export function ProductGrid({ products, onProductPress }: ProductGridProps) {
   const darkMode = useSettingsStore((s) => s.settings.dark_mode);
   const colors = darkMode ? Colors.dark : Colors.light;
+  const [containerWidth, setContainerWidth] = useState(0);
+  const numColumns = getNumColumns(containerWidth);
+
+  const GAP = Spacing.md;
+  const horizontalPadding = Spacing.md * 2;
+  const cardWidth =
+    containerWidth > 0
+      ? (containerWidth - horizontalPadding - GAP * (numColumns - 1)) / numColumns
+      : 0;
 
   if (products.length === 0) {
     return (
@@ -114,72 +121,89 @@ export function ProductGrid({ products, onProductPress }: ProductGridProps) {
   }
 
   return (
-    <FlatList
-      data={products}
-      keyExtractor={(item) => item.id}
-      numColumns={NUM_COLUMNS}
-      contentContainerStyle={styles.grid}
-      columnWrapperStyle={styles.row}
-      showsVerticalScrollIndicator={false}
-      renderItem={({ item, index }) => (
-        <ProductItem
-          product={item}
-          onPress={onProductPress}
-          index={index}
-        />
+    <View
+      style={styles.listContainer}
+      onLayout={(event) => {
+        const nextWidth = event.nativeEvent.layout.width;
+        if (nextWidth > 0 && nextWidth !== containerWidth) {
+          setContainerWidth(nextWidth);
+        }
+      }}
+    >
+      {cardWidth > 0 && (
+        <ScrollView
+          style={styles.list}
+          contentContainerStyle={[styles.grid, { gap: GAP }]}
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={[styles.gridRow, { gap: GAP }]}>
+            {products.map((product, index) => (
+              <ProductItem
+                key={product.id}
+                product={product}
+                onPress={onProductPress}
+                index={index}
+                cardWidth={cardWidth}
+              />
+            ))}
+          </View>
+        </ScrollView>
       )}
-    />
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  grid: {
-    padding: Spacing.sm,
+  listContainer: {
+    flex: 1,
+    minHeight: 0,
   },
-  row: {
-    gap: Spacing.sm,
-    marginBottom: Spacing.sm,
+  list: {
+    flex: 1,
+  },
+  grid: {
+    padding: Spacing.md,
+    paddingBottom: Spacing.xl,
+  },
+  gridRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
   },
   productCard: {
-    flex: 1,
-    padding: Spacing.md,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.base,
     borderRadius: BorderRadius.lg,
     borderWidth: 1,
     alignItems: 'center',
+    justifyContent: 'space-between',
+    minHeight: 150,
+    maxHeight: 170,
     gap: Spacing.xs,
   },
   productIcon: {
-    width: 52,
-    height: 52,
-    borderRadius: BorderRadius.lg,
+    width: 48,
+    height: 48,
+    borderRadius: BorderRadius.md,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: Spacing.xs,
   },
   productName: {
-    fontSize: Typography.fontSize.sm,
-    fontWeight: '600',
-    textAlign: 'center',
-    minHeight: 36,
-  },
-  productPrice: {
     fontSize: Typography.fontSize.base,
     fontWeight: '700',
+    textAlign: 'center',
+    width: '100%',
+    lineHeight: 22,
+    minHeight: 44,
   },
-  stockRow: {
-    marginTop: Spacing.xs,
-  },
-  stockBadge: {
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: 2,
-    borderRadius: BorderRadius.full,
+  productPrice: {
+    fontSize: Typography.fontSize.md,
+    fontWeight: '800',
+    marginTop: 2,
   },
   stockText: {
-    fontSize: Typography.fontSize.xs,
+    fontSize: Typography.fontSize.sm,
     fontWeight: '600',
-  },
-  stockNormal: {
-    fontSize: Typography.fontSize.xs,
+    marginTop: 2,
   },
   emptyContainer: {
     flex: 1,

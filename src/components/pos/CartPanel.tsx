@@ -10,11 +10,12 @@ import {
   Pressable,
   StyleSheet,
   Alert,
+  useWindowDimensions,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
-import Animated, { FadeIn, FadeOut, Layout } from 'react-native-reanimated';
+import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
 import { Colors, Gradients, Typography, Spacing, BorderRadius } from '../../constants/theme';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useCartStore } from '../../stores/cartStore';
@@ -25,6 +26,8 @@ interface CartPanelProps {
 }
 
 export function CartPanel({ onCheckout }: CartPanelProps) {
+  const { width } = useWindowDimensions();
+  const isCompact = width < 768;
   const darkMode = useSettingsStore((s) => s.settings.dark_mode);
   const colors = darkMode ? Colors.dark : Colors.light;
   const currency = useSettingsStore((s) => s.settings.currency);
@@ -67,7 +70,17 @@ export function CartPanel({ onCheckout }: CartPanelProps) {
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+    <View
+      style={[
+        styles.container,
+        {
+          backgroundColor: colors.surface,
+          borderColor: colors.border,
+          borderLeftWidth: isCompact ? 0 : 1,
+          borderTopWidth: isCompact ? 1 : 0,
+        },
+      ]}
+    >
       {/* Header */}
       <View style={styles.header}>
         <View style={styles.headerLeft}>
@@ -103,7 +116,7 @@ export function CartPanel({ onCheckout }: CartPanelProps) {
               الفاتورة فارغة
             </Text>
             <Text style={[styles.emptySubtext, { color: colors.textMuted }]}>
-              اضغط على المنتجات لإضافتها
+              اضغط على المنتجات أو استخدم "صنف سريع"
             </Text>
           </View>
         ) : (
@@ -112,53 +125,71 @@ export function CartPanel({ onCheckout }: CartPanelProps) {
               key={item.product.id}
               entering={FadeIn.duration(200)}
               exiting={FadeOut.duration(150)}
-              layout={Layout.springify()}
-              style={[styles.cartItem, { borderBottomColor: colors.border }]}
+              style={[
+                styles.cartItem,
+                {
+                  backgroundColor: colors.surfaceLight,
+                  borderColor: colors.border,
+                },
+              ]}
             >
-              <View style={styles.itemInfo}>
-                <Text
-                  style={[styles.itemName, { color: colors.text }]}
-                  numberOfLines={1}
-                >
-                  {item.product.name}
-                </Text>
-                <Text style={[styles.itemPrice, { color: colors.textSecondary }]}>
-                  {formatCurrency(item.product.sell_price, currency)} × {item.quantity}
-                </Text>
-              </View>
+              <View style={styles.itemMain}>
+                <View style={styles.itemInfo}>
+                  <View style={styles.itemNameRow}>
+                    <Text
+                      style={[styles.itemName, { color: colors.text }]}
+                      numberOfLines={1}
+                      ellipsizeMode="tail"
+                    >
+                      {item.product.name}
+                    </Text>
+                    {item.isCustom && (
+                      <View style={[styles.customBadge, { backgroundColor: 'rgba(251, 191, 36, 0.15)' }]}>
+                        <Text style={[styles.customBadgeText, { color: colors.warning }]}>سريع</Text>
+                      </View>
+                    )}
+                  </View>
+                  <Text
+                    style={[styles.itemPrice, { color: colors.textSecondary }]}
+                    numberOfLines={1}
+                  >
+                    {formatCurrency(item.product.sell_price, currency)} × {item.quantity}
+                  </Text>
+                </View>
 
-              <View style={styles.itemActions}>
-                <Pressable
-                  onPress={() => {
-                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                    decrementItem(item.product.id);
-                  }}
-                  style={[styles.qtyBtn, { backgroundColor: colors.surfaceLight }]}
-                >
-                  <MaterialCommunityIcons
-                    name={item.quantity === 1 ? 'delete-outline' : 'minus'}
-                    size={16}
-                    color={item.quantity === 1 ? colors.danger : colors.text}
-                  />
-                </Pressable>
+                <View style={styles.itemActions}>
+                  <Pressable
+                    onPress={() => {
+                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                      decrementItem(item.product.id);
+                    }}
+                    style={[styles.qtyBtn, { backgroundColor: colors.surface }]}
+                  >
+                    <MaterialCommunityIcons
+                      name={item.quantity === 1 ? 'delete-outline' : 'minus'}
+                      size={14}
+                      color={item.quantity === 1 ? colors.danger : colors.text}
+                    />
+                  </Pressable>
 
-                <Text style={[styles.qtyText, { color: colors.text }]}>
-                  {item.quantity}
-                </Text>
+                  <Text style={[styles.qtyText, { color: colors.text }]}>
+                    {item.quantity}
+                  </Text>
 
-                <Pressable
-                  onPress={() => {
-                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                    incrementItem(item.product.id);
-                  }}
-                  style={[styles.qtyBtn, { backgroundColor: colors.primaryGlow }]}
-                >
-                  <MaterialCommunityIcons name="plus" size={16} color={colors.primary} />
-                </Pressable>
+                  <Pressable
+                    onPress={() => {
+                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                      incrementItem(item.product.id);
+                    }}
+                    style={[styles.qtyBtn, { backgroundColor: colors.primaryGlow }]}
+                  >
+                    <MaterialCommunityIcons name="plus" size={14} color={colors.primary} />
+                  </Pressable>
 
-                <Text style={[styles.itemTotal, { color: colors.text }]}>
-                  {formatCurrency(item.total, currency)}
-                </Text>
+                  <Text style={[styles.itemTotal, { color: colors.text }]}>
+                    {formatCurrency(item.total, currency)}
+                  </Text>
+                </View>
               </View>
             </Animated.View>
           ))
@@ -220,7 +251,6 @@ export function CartPanel({ onCheckout }: CartPanelProps) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    borderLeftWidth: 1,
   },
   header: {
     flexDirection: 'row',
@@ -251,6 +281,8 @@ const styles = StyleSheet.create({
   },
   itemsList: {
     flex: 1,
+    paddingHorizontal: Spacing.sm,
+    paddingTop: Spacing.sm,
   },
   emptyCart: {
     alignItems: 'center',
@@ -266,44 +298,74 @@ const styles = StyleSheet.create({
     fontSize: Typography.fontSize.sm,
   },
   cartItem: {
-    paddingHorizontal: Spacing.base,
-    paddingVertical: Spacing.md,
-    borderBottomWidth: 1,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    marginBottom: Spacing.sm,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: Spacing.sm,
+    minHeight: 56,
+    maxHeight: 64,
+    overflow: 'hidden',
+  },
+  itemMain: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
   },
   itemInfo: {
-    marginBottom: Spacing.xs,
+    flex: 1,
+    minWidth: 0,
+  },
+  itemNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs,
+    maxWidth: '100%',
   },
   itemName: {
     fontSize: Typography.fontSize.sm,
     fontWeight: '600',
+    flexShrink: 1,
+    flexGrow: 0,
+  },
+  customBadge: {
+    paddingHorizontal: Spacing.xs,
+    paddingVertical: 1,
+    borderRadius: BorderRadius.sm,
+    flexShrink: 0,
+  },
+  customBadgeText: {
+    fontSize: Typography.fontSize.xs,
+    fontWeight: '700',
   },
   itemPrice: {
     fontSize: Typography.fontSize.xs,
-    marginTop: 2,
+    marginTop: 1,
   },
   itemActions: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Spacing.sm,
-    marginTop: Spacing.xs,
+    gap: Spacing.xs,
+    flexShrink: 0,
   },
   qtyBtn: {
-    width: 28,
-    height: 28,
+    width: 24,
+    height: 24,
     borderRadius: BorderRadius.sm,
     justifyContent: 'center',
     alignItems: 'center',
   },
   qtyText: {
-    fontSize: Typography.fontSize.base,
+    fontSize: Typography.fontSize.sm,
     fontWeight: '700',
-    minWidth: 24,
+    minWidth: 18,
     textAlign: 'center',
   },
   itemTotal: {
-    marginLeft: 'auto',
     fontSize: Typography.fontSize.sm,
     fontWeight: '700',
+    minWidth: 52,
+    textAlign: 'right',
   },
   totals: {
     paddingHorizontal: Spacing.base,

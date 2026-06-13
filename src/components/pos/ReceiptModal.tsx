@@ -69,6 +69,9 @@ export function ReceiptModal({ visible, invoice, items, onClose }: ReceiptModalP
     invoice.status === 'partial' ? 'دفع جزئي' : invoice.status === 'refunded' ? 'مرتجع' : 'مدفوعة';
   const statusColor =
     invoice.status === 'partial' ? colors.warning : invoice.status === 'refunded' ? colors.danger : colors.accent;
+  const calculatedTotal = invoice.subtotal + invoice.tax_amount;
+  const priceAdjustment = invoice.total - calculatedTotal;
+  const hasPriceAdjustment = Math.abs(priceAdjustment) > 0.005;
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
@@ -95,6 +98,14 @@ export function ReceiptModal({ visible, invoice, items, onClose }: ReceiptModalP
             contentContainerStyle={styles.bodyContent}
             showsVerticalScrollIndicator={false}
           >
+            {invoice.invoice_name && (
+              <View style={styles.metaRow}>
+                <Text style={[styles.metaLabel, { color: colors.textSecondary }]}>اسم الفاتورة</Text>
+                <Text style={[styles.metaValue, { color: colors.text }]} numberOfLines={1}>
+                  {invoice.invoice_name}
+                </Text>
+              </View>
+            )}
             <View style={styles.metaRow}>
               <Text style={[styles.metaLabel, { color: colors.textSecondary }]}>رقم الفاتورة</Text>
               <Text style={[styles.metaValue, { color: colors.text }]}>
@@ -150,8 +161,18 @@ export function ReceiptModal({ visible, invoice, items, onClose }: ReceiptModalP
                 </Text>
               </View>
             )}
+            {hasPriceAdjustment && (
+              <View style={styles.totalRow}>
+                <Text style={[styles.totalLabel, { color: priceAdjustment < 0 ? colors.accent : colors.warning }]}>
+                  {priceAdjustment < 0 ? 'خصم' : 'تعديل سعر'}
+                </Text>
+                <Text style={[styles.totalValue, { color: priceAdjustment < 0 ? colors.accent : colors.warning }]}>
+                  {priceAdjustment < 0 ? '-' : '+'}{formatCurrency(Math.abs(priceAdjustment), currency)}
+                </Text>
+              </View>
+            )}
             <View style={[styles.totalRow, styles.grandRow]}>
-              <Text style={[styles.grandLabel, { color: colors.text }]}>الإجمالي</Text>
+              <Text style={[styles.grandLabel, { color: colors.text }]}>الإجمالي النهائي</Text>
               <Text style={[styles.grandValue, { color: colors.primary }]}>
                 {formatCurrency(invoice.total, currency)}
               </Text>

@@ -28,6 +28,9 @@ function escapeHtml(value: string): string {
  */
 export function buildReceiptHtml({ invoice, items, settings, cashierName }: ReceiptData): string {
   const currency = settings.currency || 'EGP';
+  const calculatedTotal = invoice.subtotal + invoice.tax_amount;
+  const priceAdjustment = invoice.total - calculatedTotal;
+  const hasPriceAdjustment = Math.abs(priceAdjustment) > 0.005;
 
   const itemsRows = items
     .map(
@@ -46,6 +49,14 @@ export function buildReceiptHtml({ invoice, items, settings, cashierName }: Rece
       <div class="row">
         <span>الضريبة (${(settings.tax_rate * 100).toFixed(0)}%)</span>
         <span>${formatCurrency(invoice.tax_amount, currency)}</span>
+      </div>`
+    : '';
+
+  const priceAdjustmentRow = hasPriceAdjustment
+    ? `
+      <div class="row ${priceAdjustment < 0 ? 'discount' : 'adjustment'}">
+        <span>${priceAdjustment < 0 ? 'خصم' : 'تعديل سعر'}</span>
+        <span>${priceAdjustment < 0 ? '-' : '+'}${formatCurrency(Math.abs(priceAdjustment), currency)}</span>
       </div>`
     : '';
 
@@ -75,6 +86,10 @@ export function buildReceiptHtml({ invoice, items, settings, cashierName }: Rece
 
   const footerLine = settings.footer_message
     ? `<div class="footer-msg">${escapeHtml(settings.footer_message)}</div>`
+    : '';
+
+  const invoiceNameLine = invoice.invoice_name
+    ? `<div class="row"><span>اسم الفاتورة</span><span>${escapeHtml(invoice.invoice_name)}</span></div>`
     : '';
 
   return `<!DOCTYPE html>
@@ -130,6 +145,8 @@ export function buildReceiptHtml({ invoice, items, settings, cashierName }: Rece
       padding-top: 8px;
       margin-top: 8px;
     }
+    .totals .discount { color: #059669; font-weight: 700; }
+    .totals .adjustment { color: #d97706; font-weight: 700; }
     .totals .due { color: #dc2626; font-weight: 700; }
     .footer-msg { text-align: center; font-size: 13px; font-weight: 600; margin-top: 14px; }
     .thanks { text-align: center; font-size: 11px; color: #888; margin-top: 6px; }
@@ -143,6 +160,7 @@ export function buildReceiptHtml({ invoice, items, settings, cashierName }: Rece
   <hr class="divider" />
 
   <div class="meta">
+    ${invoiceNameLine}
     <div class="row"><span>رقم الفاتورة</span><span>${generateInvoiceNumber(invoice.invoice_number)}</span></div>
     <div class="row"><span>التاريخ</span><span>${formatDateTime(invoice.created_at)}</span></div>
     ${cashierName ? `<div class="row"><span>الكاشير</span><span>${escapeHtml(cashierName)}</span></div>` : ''}
@@ -166,7 +184,8 @@ export function buildReceiptHtml({ invoice, items, settings, cashierName }: Rece
   <div class="totals">
     <div class="row"><span>المجموع الفرعي</span><span>${formatCurrency(invoice.subtotal, currency)}</span></div>
     ${taxRow}
-    <div class="row grand"><span>الإجمالي</span><span>${formatCurrency(invoice.total, currency)}</span></div>
+    ${priceAdjustmentRow}
+    <div class="row grand"><span>الإجمالي النهائي</span><span>${formatCurrency(invoice.total, currency)}</span></div>
     <div class="row"><span>المدفوع</span><span>${formatCurrency(invoice.amount_paid, currency)}</span></div>
     ${dueRow}
   </div>
