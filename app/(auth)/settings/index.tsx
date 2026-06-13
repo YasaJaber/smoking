@@ -78,7 +78,7 @@ export default function SettingsScreen() {
   const { width } = useWindowDimensions();
   const isCompact = width < 768;
   const { settings, updateSettings } = useSettingsStore();
-  const { logout } = useAuthStore();
+  const { logout, updatePin } = useAuthStore();
   const syncStatus = useSyncStore((s) => s.status);
   const pendingCount = useSyncStore((s) => s.pendingCount);
   const lastSyncIso = useSyncStore((s) => s.lastSyncIso);
@@ -94,6 +94,10 @@ export default function SettingsScreen() {
   const [footerMsg, setFooterMsg] = useState(settings.footer_message);
   const [lowStock, setLowStock] = useState(settings.low_stock_threshold.toString());
   const [serverUrl, setServerUrl] = useState(settings.server_url);
+  const [currentPin, setCurrentPin] = useState('');
+  const [newPin, setNewPin] = useState('');
+  const [confirmPin, setConfirmPin] = useState('');
+  const [isChangingPin, setIsChangingPin] = useState(false);
 
   const handleSave = async () => {
     await updateSettings({
@@ -117,6 +121,40 @@ export default function SettingsScreen() {
     }
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     await runSync(false);
+  };
+
+  const handleChangePin = async () => {
+    const pinPattern = /^\d{4}$/;
+
+    if (!pinPattern.test(currentPin) || !pinPattern.test(newPin) || !pinPattern.test(confirmPin)) {
+      Alert.alert('تنبيه', 'رمز الدخول يجب أن يكون 4 أرقام');
+      return;
+    }
+
+    if (newPin !== confirmPin) {
+      Alert.alert('تنبيه', 'تأكيد رمز الدخول غير مطابق');
+      return;
+    }
+
+    if (newPin === currentPin) {
+      Alert.alert('تنبيه', 'اكتب رمز دخول جديد مختلف عن الحالي');
+      return;
+    }
+
+    setIsChangingPin(true);
+    try {
+      await updatePin(currentPin, newPin);
+      setCurrentPin('');
+      setNewPin('');
+      setConfirmPin('');
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      Alert.alert('✅', 'تم تغيير رمز الدخول بنجاح');
+    } catch (err) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      Alert.alert('تعذر تغيير الرمز', err instanceof Error ? err.message : 'حاول مرة أخرى');
+    } finally {
+      setIsChangingPin(false);
+    }
   };
 
   const syncStatusLabel = (() => {
@@ -230,6 +268,60 @@ export default function SettingsScreen() {
                   thumbColor={settings.dark_mode ? colors.primary : colors.textMuted}
                 />
               </SettingRow>
+            </SettingSection>
+
+            {/* Security */}
+            <SettingSection title="الأمان" icon="shield-key" delay={300} colors={colors}>
+              <SettingRow label="رمز الدخول الحالي" colors={colors}>
+                <TextInput
+                  style={[styles.input, styles.pinInput, { backgroundColor: colors.surfaceLight, borderColor: colors.border, color: colors.text }]}
+                  value={currentPin}
+                  onChangeText={setCurrentPin}
+                  keyboardType="number-pad"
+                  maxLength={4}
+                  secureTextEntry
+                  textContentType="password"
+                />
+              </SettingRow>
+              <SettingRow label="رمز الدخول الجديد" colors={colors}>
+                <TextInput
+                  style={[styles.input, styles.pinInput, { backgroundColor: colors.surfaceLight, borderColor: colors.border, color: colors.text }]}
+                  value={newPin}
+                  onChangeText={setNewPin}
+                  keyboardType="number-pad"
+                  maxLength={4}
+                  secureTextEntry
+                  textContentType="newPassword"
+                />
+              </SettingRow>
+              <SettingRow label="تأكيد الرمز الجديد" colors={colors}>
+                <TextInput
+                  style={[styles.input, styles.pinInput, { backgroundColor: colors.surfaceLight, borderColor: colors.border, color: colors.text }]}
+                  value={confirmPin}
+                  onChangeText={setConfirmPin}
+                  keyboardType="number-pad"
+                  maxLength={4}
+                  secureTextEntry
+                  textContentType="newPassword"
+                />
+              </SettingRow>
+              <Pressable
+                onPress={handleChangePin}
+                disabled={isChangingPin}
+                style={[
+                  styles.securityBtn,
+                  { backgroundColor: isChangingPin ? colors.surfaceLight : colors.primary },
+                ]}
+              >
+                <MaterialCommunityIcons
+                  name={isChangingPin ? 'lock-clock' : 'lock-reset'}
+                  size={18}
+                  color={isChangingPin ? colors.textMuted : '#fff'}
+                />
+                <Text style={[styles.securityBtnText, { color: isChangingPin ? colors.textMuted : '#fff' }]}>
+                  {isChangingPin ? 'جاري التغيير...' : 'تغيير رمز الدخول'}
+                </Text>
+              </Pressable>
             </SettingSection>
           </View>
 
@@ -414,6 +506,20 @@ const styles = StyleSheet.create({
     textAlign: 'right',
   },
   smallInput: { width: 80 },
+  pinInput: {
+    textAlign: 'center',
+    letterSpacing: 6,
+  },
+  securityBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.sm,
+    margin: Spacing.base,
+    padding: Spacing.md,
+    borderRadius: BorderRadius.lg,
+  },
+  securityBtnText: { fontSize: Typography.fontSize.sm, fontWeight: '700' },
   syncStatusRow: {
     flexDirection: 'row',
     alignItems: 'center',
