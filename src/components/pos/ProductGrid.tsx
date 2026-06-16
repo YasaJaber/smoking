@@ -17,6 +17,7 @@ interface ProductGridProps {
   products: Product[];
   categories: Category[];
   onProductPress: (product: Product) => void;
+  emptyMessage?: string;
 }
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
@@ -95,7 +96,12 @@ function ProductItem({ product, category, onPress, index, cardWidth }: {
   );
 }
 
-export function ProductGrid({ products, categories, onProductPress }: ProductGridProps) {
+export function ProductGrid({
+  products,
+  categories,
+  onProductPress,
+  emptyMessage = 'لا توجد منتجات في هذا القسم',
+}: ProductGridProps) {
   const darkMode = useSettingsStore((s) => s.settings.dark_mode);
   const colors = darkMode ? Colors.dark : Colors.light;
   const [containerWidth, setContainerWidth] = useState(0);
@@ -117,7 +123,7 @@ export function ProductGrid({ products, categories, onProductPress }: ProductGri
       <View style={styles.emptyContainer}>
         <MaterialCommunityIcons name="package-variant" size={48} color={colors.textMuted} />
         <Text style={[styles.emptyText, { color: colors.textMuted }]}>
-          لا توجد منتجات في هذا القسم
+          {emptyMessage}
         </Text>
       </View>
     );

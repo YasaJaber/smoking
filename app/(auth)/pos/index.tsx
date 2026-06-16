@@ -4,7 +4,7 @@
 // Resizable cart panel via drag handle
 // ============================================================
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -59,6 +59,7 @@ export default function POSScreen() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
   const [showCheckout, setShowCheckout] = useState(false);
   const [finalTotalAmount, setFinalTotalAmount] = useState('');
   const [paidAmount, setPaidAmount] = useState('');
@@ -223,6 +224,17 @@ export default function POSScreen() {
     ]);
   };
 
+  const normalizedSearchQuery = searchQuery.trim().toLocaleLowerCase();
+  const filteredProducts = useMemo(() => {
+    if (!normalizedSearchQuery) return products;
+
+    return products.filter((product) => {
+      const name = product.name.toLocaleLowerCase();
+      const barcode = product.barcode?.toLocaleLowerCase() ?? '';
+      return name.includes(normalizedSearchQuery) || barcode.includes(normalizedSearchQuery);
+    });
+  }, [products, normalizedSearchQuery]);
+
   const finalTotalNum = parseFloat(finalTotalAmount) || 0;
   const paidNum = parseFloat(paidAmount) || 0;
   const changeAmount = paidNum - finalTotalNum;
@@ -358,11 +370,52 @@ export default function POSScreen() {
             selectedId={selectedCategory}
             onSelect={setSelectedCategory}
           />
+          <View style={[styles.searchSection, { backgroundColor: colors.background }]}>
+            <View
+              style={[
+                styles.searchBox,
+                {
+                  backgroundColor: colors.surface,
+                  borderColor: normalizedSearchQuery ? colors.primary : colors.border,
+                },
+              ]}
+            >
+              <MaterialCommunityIcons name="magnify" size={20} color={colors.textMuted} />
+              <TextInput
+                style={[styles.searchInput, { color: colors.text }]}
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+                placeholder="ابحث باسم الصنف "
+                placeholderTextColor={colors.textMuted}
+                returnKeyType="search"
+                clearButtonMode="while-editing"
+              />
+              {searchQuery.length > 0 && (
+                <Pressable
+                  onPress={() => setSearchQuery('')}
+                  hitSlop={8}
+                  style={[styles.searchClearBtn, { backgroundColor: colors.surfaceLight }]}
+                >
+                  <MaterialCommunityIcons name="close" size={16} color={colors.textSecondary} />
+                </Pressable>
+              )}
+            </View>
+            <Text style={[styles.searchMetaText, { color: colors.textMuted }]}>
+              {normalizedSearchQuery
+                ? `${filteredProducts.length} نتيجة`
+                : `${products.length} صنف متاح`}
+            </Text>
+          </View>
           <View style={styles.productGridWrapper}>
             <ProductGrid
-              products={products}
+              products={filteredProducts}
               categories={categories}
               onProductPress={handleProductPress}
+              emptyMessage={
+                normalizedSearchQuery
+                  ? 'لا توجد نتائج مطابقة للبحث'
+                  : 'لا توجد منتجات في هذا القسم'
+              }
             />
           </View>
         </Animated.View>
@@ -689,6 +742,37 @@ const styles = StyleSheet.create({
   productGridWrapper: {
     flex: 1,
     minHeight: 0,
+  },
+  searchSection: {
+    paddingHorizontal: Spacing.base,
+    paddingTop: Spacing.sm,
+    paddingBottom: Spacing.xs,
+    gap: Spacing.xs,
+  },
+  searchBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderRadius: BorderRadius.lg,
+    paddingHorizontal: Spacing.md,
+    minHeight: 48,
+    gap: Spacing.sm,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: Typography.fontSize.base,
+    paddingVertical: Spacing.sm,
+  },
+  searchClearBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: BorderRadius.full,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  searchMetaText: {
+    fontSize: Typography.fontSize.xs,
+    fontWeight: '500',
   },
   cartSection: {
     flex: 0.38,
