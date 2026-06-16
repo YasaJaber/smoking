@@ -30,6 +30,7 @@ cashier never waits.
 4. Add Environment Variables:
    - `MONGODB_URI` = your Atlas connection string
    - `MONGODB_DB` = `smoking_pos` (optional)
+   - `SYNC_TOKEN` = a long random secret used by the app in the `x-sync-token` header
 5. **Deploy**. You get a URL like `https://your-project.vercel.app`.
 
 Or via CLI from the `server/` folder:
@@ -45,13 +46,20 @@ npx vercel --prod     # production deploy
 
 In the app: **الإعدادات → المزامنة السحابية → عنوان السيرفر** and enter your
 Vercel URL **without** a trailing path, e.g. `https://your-project.vercel.app`
-(the app calls `/api/sync` automatically). Press **حفظ** then **مزامنة الآن**.
+(the app calls `/api/sync` automatically). Enter the same `SYNC_TOKEN` in
+**توكن المزامنة**. Press **حفظ** then **مزامنة الآن**.
 
 ## Endpoints
 
 - `POST /api/sync` – bidirectional sync
 - `GET /api/health` – `{ ok: true }`
 - `GET /api/stats` – document counts per collection
+
+`/api/sync` and `/api/stats` require the header:
+
+```http
+x-sync-token: your-long-random-secret
+```
 
 ```jsonc
 // POST /api/sync request

@@ -16,7 +16,7 @@ interface CartState {
 
   // Actions
   addItem: (product: Product) => void;
-  addCustomItem: (name: string, sellPrice: number, quantity: number) => void;
+  addCustomItem: (name: string, costPrice: number, sellPrice: number, quantity: number) => void;
   removeItem: (productId: string) => void;
   updateQuantity: (productId: string, quantity: number) => void;
   incrementItem: (productId: string) => void;
@@ -70,9 +70,9 @@ export const useCartStore = create<CartState>((set, get) => ({
     set({ items: newItems, ...recalculate(newItems, taxEnabled, taxRate) });
   },
 
-  addCustomItem: (name: string, sellPrice: number, quantity: number) => {
+  addCustomItem: (name: string, costPrice: number, sellPrice: number, quantity: number) => {
     const trimmedName = name.trim();
-    if (!trimmedName || sellPrice <= 0 || quantity <= 0) return;
+    if (!trimmedName || costPrice < 0 || sellPrice <= 0 || quantity <= 0) return;
 
     const { items, taxEnabled, taxRate } = get();
     const now = new Date().toISOString();
@@ -81,7 +81,7 @@ export const useCartStore = create<CartState>((set, get) => ({
       category_id: '',
       name: trimmedName,
       barcode: null,
-      cost_price: 0,
+      cost_price: costPrice,
       sell_price: sellPrice,
       quantity: 0,
       min_quantity: 0,

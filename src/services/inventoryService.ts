@@ -2,7 +2,7 @@
 // Inventory Service - Business logic for products & categories
 // ============================================================
 
-import { getDatabase, generateId } from '../db/client';
+import { getDatabase, generateId, runSerialized } from '../db/client';
 import type { Category, Product } from '../types';
 
 // ==================== CATEGORIES ====================
@@ -19,6 +19,7 @@ export async function createCategory(
   icon: string,
   color: string
 ): Promise<Category> {
+  return runSerialized(async () => {
   const db = await getDatabase();
   const id = generateId();
   const now = new Date().toISOString();
@@ -45,12 +46,14 @@ export async function createCategory(
     created_at: now,
     updated_at: now,
   };
+  });
 }
 
 export async function updateCategory(
   id: string,
   updates: Partial<Pick<Category, 'name' | 'icon' | 'color'>>
 ): Promise<void> {
+  return runSerialized(async () => {
   const db = await getDatabase();
   const now = new Date().toISOString();
   const setClauses: string[] = [];
@@ -69,14 +72,17 @@ export async function updateCategory(
     `UPDATE categories SET ${setClauses.join(', ')} WHERE id = ?`,
     values
   );
+  });
 }
 
 export async function deleteCategory(id: string): Promise<void> {
+  return runSerialized(async () => {
   const db = await getDatabase();
   await db.runAsync(
     "UPDATE categories SET is_active = 0, synced = 0, updated_at = datetime('now') WHERE id = ?",
     [id]
   );
+  });
 }
 
 // ==================== PRODUCTS ====================
@@ -97,15 +103,33 @@ export async function getAllProducts(categoryId?: string): Promise<Product[]> {
 export async function createProduct(
   data: Pick<Product, 'category_id' | 'name' | 'cost_price' | 'sell_price' | 'quantity' | 'min_quantity'>
 ): Promise<Product> {
+  return runSerialized(async () => {
   const db = await getDatabase();
   const id = generateId();
   const now = new Date().toISOString();
 
-  await db.runAsync(
-    `INSERT INTO products (id, category_id, name, cost_price, sell_price, quantity, min_quantity, is_active, synced, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, 1, 0, ?, ?)`,
-    [id, data.category_id, data.name, data.cost_price, data.sell_price, data.quantity, data.min_quantity, now, now]
-  );
+  await db.execAsync('BEGIN TRANSACTION');
+  try {
+    await db.runAsync(
+      `INSERT INTO products (id, category_id, name, cost_price, sell_price, quantity, min_quantity, is_active, synced, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 1, 0, ?, ?)`,
+      [id, data.category_id, data.name, data.cost_price, data.sell_price, data.quantity, data.min_quantity, now, now]
+    );
+
+    if (data.quantity !== 0) {
+      await db.runAsync(
+        `INSERT INTO inventory_movements
+          (id, product_id, delta, reason, reference_type, reference_id, note, synced, applied, created_at)
+         VALUES (?, ?, ?, 'adjustment', 'products', ?, 'initial_stock', 0, 1, ?)`,
+        [generateId(), id, data.quantity, id, now]
+      );
+    }
+
+    await db.execAsync('COMMIT');
+  } catch (error) {
+    await db.execAsync('ROLLBACK');
+    throw error;
+  }
 
   return {
     id,
@@ -117,14 +141,22 @@ export async function createProduct(
     created_at: now,
     updated_at: now,
   };
+  });
 }
 
 export async function updateProduct(
   id: string,
   updates: Partial<Pick<Product, 'name' | 'category_id' | 'cost_price' | 'sell_price' | 'quantity' | 'min_quantity'>>
 ): Promise<void> {
+  return runSerialized(async () => {
   const db = await getDatabase();
   const now = new Date().toISOString();
+  const existing = await db.getFirstAsync<Product>(
+    'SELECT * FROM products WHERE id = ? AND is_active = 1',
+    [id]
+  );
+  if (!existing) throw new Error('Product not found');
+
   const setClauses: string[] = [];
   const values: any[] = [];
 
@@ -137,18 +169,38 @@ export async function updateProduct(
   values.push(now);
   values.push(id);
 
-  await db.runAsync(
-    `UPDATE products SET ${setClauses.join(', ')} WHERE id = ?`,
-    values
-  );
+  await db.execAsync('BEGIN TRANSACTION');
+  try {
+    await db.runAsync(
+      `UPDATE products SET ${setClauses.join(', ')} WHERE id = ?`,
+      values
+    );
+
+    if (updates.quantity !== undefined && updates.quantity !== existing.quantity) {
+      await db.runAsync(
+        `INSERT INTO inventory_movements
+          (id, product_id, delta, reason, reference_type, reference_id, note, synced, applied, created_at)
+         VALUES (?, ?, ?, 'adjustment', 'products', ?, 'manual_stock_edit', 0, 1, ?)`,
+        [generateId(), id, updates.quantity - existing.quantity, id, now]
+      );
+    }
+
+    await db.execAsync('COMMIT');
+  } catch (error) {
+    await db.execAsync('ROLLBACK');
+    throw error;
+  }
+  });
 }
 
 export async function deleteProduct(id: string): Promise<void> {
+  return runSerialized(async () => {
   const db = await getDatabase();
   await db.runAsync(
     "UPDATE products SET is_active = 0, synced = 0, updated_at = datetime('now') WHERE id = ?",
     [id]
   );
+  });
 }
 
 export async function getLowStockProducts(threshold?: number): Promise<Product[]> {

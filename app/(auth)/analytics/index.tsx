@@ -229,7 +229,7 @@ export default function AnalyticsScreen() {
             </Text>
             {topProducts.length > 0 ? (
               topProducts.map((prod, index) => (
-                <View key={prod.product_id} style={[styles.topItem, { borderBottomColor: colors.border }]}>
+                <View key={prod.product_id ?? prod.product_name} style={[styles.topItem, { borderBottomColor: colors.border }]}>
                   <View style={[styles.topRank, { backgroundColor: index === 0 ? colors.primaryGlow : colors.surfaceLight }]}>
                     <Text style={[styles.topRankText, { color: index === 0 ? colors.primary : colors.textMuted }]}>
                       {index + 1}
@@ -244,7 +244,7 @@ export default function AnalyticsScreen() {
                     </Text>
                   </View>
                   <Text style={[styles.topRevenue, { color: colors.accent }]}>
-                    {formatCurrency(prod.total_revenue, currency)}
+                    {formatCurrency(prod.total_profit, currency)}
                   </Text>
                 </View>
               ))

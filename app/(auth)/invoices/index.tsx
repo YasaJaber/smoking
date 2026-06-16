@@ -24,7 +24,7 @@ import {
 import { CurrentDateBadge, formatDisplayDate, getLocalDateKey } from '../../../src/components/common/CurrentDateBadge';
 import { useSettingsStore } from '../../../src/stores/settingsStore';
 import { useDateStore } from '../../../src/stores/dateStore';
-import { formatCurrency, formatTime, generateInvoiceNumber } from '../../../src/utils/formatters';
+import { formatCurrency, formatTime, formatInvoiceCode } from '../../../src/utils/formatters';
 import { Colors, Typography, Spacing, BorderRadius } from '../../../src/constants/theme';
 import type { Invoice, InvoiceItem } from '../../../src/types';
 
@@ -146,7 +146,7 @@ export default function InvoicesScreen() {
                   </Text>
                 )}
                 <Text style={[styles.invoiceNumber, { color: item.invoice_name ? colors.textMuted : colors.text }]}>
-                  {generateInvoiceNumber(item.invoice_number)}
+                  {formatInvoiceCode(item.invoice_number, item.invoice_code)}
                 </Text>
                 <Text style={[styles.invoiceTime, { color: colors.textMuted }]}>
                   {formatTime(item.created_at)}

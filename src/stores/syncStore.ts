@@ -27,6 +27,8 @@ interface SyncState {
 
 function mapError(message: string): string {
   if (message === 'NO_SERVER') return 'لم يتم ضبط عنوان السيرفر';
+  if (message === 'SERVER_401') return 'توكن المزامنة غير صحيح';
+  if (message === 'SERVER_503') return 'السيرفر غير مضبوط بتوكن مزامنة';
   if (message.startsWith('SERVER_')) return `خطأ من السيرفر (${message.replace('SERVER_', '')})`;
   if (message.includes('Aborted') || message.includes('abort')) return 'انتهت مهلة الاتصال';
   return 'تعذّر الاتصال بالسيرفر';

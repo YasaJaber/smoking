@@ -19,7 +19,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import Animated, { SlideInDown } from 'react-native-reanimated';
 import { Colors, Gradients, Typography, Spacing, BorderRadius } from '../../constants/theme';
 import { useSettingsStore } from '../../stores/settingsStore';
-import { formatCurrency, formatDateTime, generateInvoiceNumber } from '../../utils/formatters';
+import { formatCurrency, formatDateTime, formatInvoiceCode } from '../../utils/formatters';
 import { printInvoice, shareInvoicePdf } from '../../services/printService';
 import type { Invoice, InvoiceItem } from '../../types';
 
@@ -126,7 +126,7 @@ export function ReceiptModal({ visible, invoice, items, onClose }: ReceiptModalP
             <View style={styles.metaRow}>
               <Text style={[styles.metaLabel, { color: colors.textSecondary }]}>رقم الفاتورة</Text>
               <Text style={[styles.metaValue, { color: colors.text }]}>
-                {generateInvoiceNumber(invoice.invoice_number)}
+                {formatInvoiceCode(invoice.invoice_number, invoice.invoice_code)}
               </Text>
             </View>
             <View style={styles.metaRow}>

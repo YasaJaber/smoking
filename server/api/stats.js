@@ -7,6 +7,13 @@ const { TABLES } = require('../lib/syncCore');
 
 module.exports = async (_req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Headers', 'x-sync-token');
+  if (!process.env.SYNC_TOKEN) {
+    return res.status(503).json({ error: 'sync_token_not_configured' });
+  }
+  if (_req.headers['x-sync-token'] !== process.env.SYNC_TOKEN) {
+    return res.status(401).json({ error: 'unauthorized' });
+  }
   try {
     const db = await getDb();
     const counts = await Promise.all(

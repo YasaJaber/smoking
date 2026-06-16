@@ -13,31 +13,11 @@ import { getDatabase } from './client';
  * of multiplying into duplicates.
  */
 /**
- * Make sure the default login accounts always exist.
- *
- * This runs on every app start (independent of the category seed guard) so a
- * device can always log in, even if the products/categories were already
- * seeded or pulled from the cloud without any user rows. INSERT OR IGNORE +
- * deterministic IDs make it safe to call repeatedly.
+ * Kept for older call sites. New installations create the first admin PIN
+ * from the login setup screen instead of shipping a known default PIN.
  */
 export async function ensureDefaultUsers(): Promise<void> {
-  const db = await getDatabase();
-  const now = new Date().toISOString();
-
-  await db.runAsync(
-    'INSERT OR IGNORE INTO users (id, name, pin, role, is_active, created_at) VALUES (?, ?, ?, ?, 1, ?)',
-    ['user-admin', 'المدير', '1234', 'admin', now]
-  );
-  await db.runAsync(
-    'INSERT OR IGNORE INTO users (id, name, pin, role, is_active, created_at) VALUES (?, ?, ?, ?, 1, ?)',
-    ['user-cashier', 'الكاشير', '0000', 'cashier', now]
-  );
-
-  // Re-activate the admin account if it was somehow deactivated, otherwise
-  // login (which requires is_active = 1) would keep failing.
-  await db.runAsync(
-    "UPDATE users SET is_active = 1 WHERE id IN ('user-admin', 'user-cashier')"
-  );
+  return;
 }
 
 export async function seedDatabase(): Promise<void> {
@@ -56,10 +36,10 @@ export async function seedDatabase(): Promise<void> {
 
   // === Create categories (deterministic IDs) ===
   const categories = [
-    { id: 'cat-cigarettes', name: 'السجائر', icon: 'smoking', color: '#ef4444', sort_order: 0 },
-    { id: 'cat-hookah', name: 'المعسل', icon: 'cloud', color: '#8b5cf6', sort_order: 1 },
-    { id: 'cat-vape', name: 'الفيب', icon: 'weather-fog', color: '#06b6d4', sort_order: 2 },
-    { id: 'cat-accessories', name: 'الإكسسوارات', icon: 'toolbox', color: '#f59e0b', sort_order: 3 },
+    { id: 'cat-cigarettes', name: 'السجائر', icon: '🚬', color: '#ef4444', sort_order: 0 },
+    { id: 'cat-hookah', name: 'المعسل', icon: '💨', color: '#8b5cf6', sort_order: 1 },
+    { id: 'cat-vape', name: 'الفيب', icon: '⚡', color: '#06b6d4', sort_order: 2 },
+    { id: 'cat-accessories', name: 'الإكسسوارات', icon: '🧰', color: '#f59e0b', sort_order: 3 },
   ];
 
   for (const cat of categories) {

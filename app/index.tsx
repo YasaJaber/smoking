@@ -3,7 +3,7 @@
 // Premium dark theme with animated PIN pad
 // ============================================================
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   View,
   Text,
@@ -11,6 +11,9 @@ import {
   Pressable,
   ScrollView,
   useWindowDimensions,
+  TextInput,
+  ActivityIndicator,
+  Alert,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
@@ -38,7 +41,13 @@ export default function LoginScreen() {
   const keySize = width >= 768 ? 76 : width >= 360 ? 66 : 58;
   const keypadWidth = keySize * 3 + Spacing.md * 2;
   const [pin, setPin] = useState('');
-  const { login, error, isLoading, clearError } = useAuthStore();
+  const { login, error, isLoading, clearError, hasUsers, createInitialUsers } = useAuthStore();
+  const [checkingUsers, setCheckingUsers] = useState(true);
+  const [isSetupMode, setIsSetupMode] = useState(false);
+  const [setupAdminPin, setSetupAdminPin] = useState('');
+  const [setupAdminConfirm, setSetupAdminConfirm] = useState('');
+  const [setupCashierPin, setSetupCashierPin] = useState('');
+  const [isCreatingUsers, setIsCreatingUsers] = useState(false);
   const colors = Colors.dark;
 
   // Shake animation for error
@@ -56,6 +65,48 @@ export default function LoginScreen() {
       withTiming(0, { duration: 50 })
     );
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    hasUsers()
+      .then((exists) => {
+        if (!cancelled) setIsSetupMode(!exists);
+      })
+      .catch(() => {
+        if (!cancelled) setIsSetupMode(false);
+      })
+      .finally(() => {
+        if (!cancelled) setCheckingUsers(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [hasUsers]);
+
+  const handleCreateInitialUsers = useCallback(async () => {
+    if (setupAdminPin !== setupAdminConfirm) {
+      Alert.alert('تنبيه', 'تأكيد رمز المدير غير مطابق');
+      return;
+    }
+
+    setIsCreatingUsers(true);
+    try {
+      await createInitialUsers(setupAdminPin, setupCashierPin.trim() || undefined);
+      setSetupAdminPin('');
+      setSetupAdminConfirm('');
+      setSetupCashierPin('');
+      setIsSetupMode(false);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      Alert.alert('تم الإعداد', 'تم إنشاء مستخدم المدير. سجل الدخول بالرمز الجديد.');
+    } catch (err) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      Alert.alert('تعذر الإعداد', err instanceof Error ? err.message : 'حاول مرة أخرى');
+    } finally {
+      setIsCreatingUsers(false);
+    }
+  }, [setupAdminPin, setupAdminConfirm, setupCashierPin, createInitialUsers]);
 
   const handleKeyPress = useCallback(async (key: string) => {
     if (key === 'delete') {
@@ -155,8 +206,57 @@ export default function LoginScreen() {
             ))}
           </Animated.View>
 
+          {checkingUsers && (
+            <ActivityIndicator size="small" color={colors.primary} style={{ marginBottom: Spacing.lg }} />
+          )}
+
+          {isSetupMode && !checkingUsers && (
+            <Animated.View entering={FadeIn.duration(200)} style={styles.setupBox}>
+              <Text style={[styles.setupTitle, { color: colors.text }]}>إعداد أول مدير</Text>
+              <TextInput
+                style={[styles.setupInput, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.text }]}
+                value={setupAdminPin}
+                onChangeText={setSetupAdminPin}
+                keyboardType="number-pad"
+                maxLength={4}
+                secureTextEntry
+                placeholder="رمز المدير"
+                placeholderTextColor={colors.textMuted}
+              />
+              <TextInput
+                style={[styles.setupInput, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.text }]}
+                value={setupAdminConfirm}
+                onChangeText={setSetupAdminConfirm}
+                keyboardType="number-pad"
+                maxLength={4}
+                secureTextEntry
+                placeholder="تأكيد رمز المدير"
+                placeholderTextColor={colors.textMuted}
+              />
+              <TextInput
+                style={[styles.setupInput, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.text }]}
+                value={setupCashierPin}
+                onChangeText={setSetupCashierPin}
+                keyboardType="number-pad"
+                maxLength={4}
+                secureTextEntry
+                placeholder="رمز كاشير اختياري"
+                placeholderTextColor={colors.textMuted}
+              />
+              <Pressable
+                onPress={handleCreateInitialUsers}
+                disabled={isCreatingUsers}
+                style={[styles.setupButton, { backgroundColor: isCreatingUsers ? colors.surfaceLight : colors.primary }]}
+              >
+                <Text style={styles.setupButtonText}>
+                  {isCreatingUsers ? 'جاري الإنشاء...' : 'إنشاء المستخدمين'}
+                </Text>
+              </Pressable>
+            </Animated.View>
+          )}
+
           {/* Error message */}
-          {error && (
+          {!isSetupMode && error && (
             <Animated.View entering={FadeIn.duration(200)}>
               <Text style={[styles.errorText, { color: colors.danger }]}>
                 {error}
@@ -165,6 +265,7 @@ export default function LoginScreen() {
           )}
 
           {/* Number Pad */}
+          {!isSetupMode && !checkingUsers && (
           <View style={[styles.keypad, { width: keypadWidth }]}>
             {PIN_KEYS.map((key, index) => (
               <Pressable
@@ -199,11 +300,8 @@ export default function LoginScreen() {
               </Pressable>
             ))}
           </View>
+          )}
 
-          {/* Hint */}
-          <Text style={[styles.hint, { color: colors.textMuted }]}>
-            المدير: 1234 • الكاشير: 0000
-          </Text>
         </Animated.View>
       </ScrollView>
     </View>
@@ -307,6 +405,36 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     marginBottom: Spacing.md,
   },
+  setupBox: {
+    width: 280,
+    gap: Spacing.sm,
+  },
+  setupTitle: {
+    fontSize: Typography.fontSize.base,
+    fontWeight: '700',
+    textAlign: 'center',
+    marginBottom: Spacing.xs,
+  },
+  setupInput: {
+    borderWidth: 1,
+    borderRadius: BorderRadius.md,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    fontSize: Typography.fontSize.base,
+    textAlign: 'center',
+    letterSpacing: 6,
+  },
+  setupButton: {
+    alignItems: 'center',
+    borderRadius: BorderRadius.md,
+    paddingVertical: Spacing.md,
+    marginTop: Spacing.xs,
+  },
+  setupButtonText: {
+    color: '#fff',
+    fontSize: Typography.fontSize.sm,
+    fontWeight: '700',
+  },
   keypad: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -322,9 +450,5 @@ const styles = StyleSheet.create({
   keyText: {
     fontSize: Typography.fontSize.xl,
     fontWeight: '600',
-  },
-  hint: {
-    fontSize: Typography.fontSize.xs,
-    marginTop: Spacing.lg,
   },
 });

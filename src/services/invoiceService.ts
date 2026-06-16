@@ -2,9 +2,10 @@
 // Invoice Service - Business logic for invoices
 // ============================================================
 
-import { getDatabase, generateId } from '../db/client';
+import { getDatabase, generateId, getOrCreateDeviceId, runSerialized } from '../db/client';
 import { getLocalDateKey, getLocalDayBounds } from '../utils/dates';
 import type { Invoice, InvoiceItem, CartItem } from '../types';
+import type { SQLiteDatabase } from 'expo-sqlite';
 
 export interface CreateInvoiceOptions {
   invoiceName?: string;
@@ -33,6 +34,28 @@ export async function getNextInvoiceNumber(): Promise<number> {
   return (result?.max_num || 0) + 1;
 }
 
+async function reserveNextInvoiceNumber(db: SQLiteDatabase): Promise<number> {
+  const stored = await db.getFirstAsync<{ value: string }>(
+    "SELECT value FROM meta WHERE key = 'invoice_sequence'"
+  );
+  const maxRow = await db.getFirstAsync<{ max_num: number | null }>(
+    'SELECT MAX(invoice_number) as max_num FROM invoices'
+  );
+  const next = Math.max(parseInt(stored?.value || '0', 10) || 0, maxRow?.max_num || 0) + 1;
+
+  await db.runAsync(
+    "INSERT INTO meta (key, value) VALUES ('invoice_sequence', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+    [String(next)]
+  );
+
+  return next;
+}
+
+function buildInvoiceCode(deviceId: string, invoiceNumber: number): string {
+  const devicePart = deviceId.replace(/-/g, '').slice(0, 6).toUpperCase();
+  return `INV-${devicePart}-${String(invoiceNumber).padStart(6, '0')}`;
+}
+
 /**
  * Create a new invoice from cart items
  * Supports partial payment - if amountPaid < total, status = 'partial'
@@ -46,9 +69,10 @@ export async function createInvoice(
   amountPaid: number,
   invoiceNameOrOptions?: string | CreateInvoiceOptions
 ): Promise<Invoice> {
+  return runSerialized(async () => {
   const db = await getDatabase();
   const invoiceId = generateId();
-  const invoiceNumber = await getNextInvoiceNumber();
+  const deviceId = await getOrCreateDeviceId();
   const now = new Date().toISOString();
   const amountDue = Math.max(0, total - amountPaid);
   const status = amountDue > 0 ? 'partial' : 'completed';
@@ -65,13 +89,17 @@ export async function createInvoice(
   await db.execAsync('BEGIN TRANSACTION');
 
   try {
+    const invoiceNumber = await reserveNextInvoiceNumber(db);
+    const invoiceCode = buildInvoiceCode(deviceId, invoiceNumber);
+
     // Insert invoice
     await db.runAsync(
-      `INSERT INTO invoices (id, invoice_number, invoice_name, invoice_type, merchant_name, merchant_phone, user_id, subtotal, tax_amount, total, amount_paid, amount_due, payment_method, status, synced, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'cash', ?, 0, ?)`,
+      `INSERT INTO invoices (id, invoice_number, invoice_code, invoice_name, invoice_type, merchant_name, merchant_phone, user_id, subtotal, tax_amount, total, amount_paid, amount_due, payment_method, status, synced, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'cash', ?, 0, ?)`,
       [
         invoiceId,
         invoiceNumber,
+        invoiceCode,
         normalizedInvoiceName,
         invoiceType,
         merchantName,
@@ -125,22 +153,26 @@ export async function createInvoice(
 
       if (!isCustom) {
         const result = await db.runAsync(
-          'UPDATE products SET quantity = quantity - ?, synced = 0, updated_at = ? WHERE id = ? AND quantity >= ?',
-          [item.quantity, now, item.product.id, item.quantity]
+          'UPDATE products SET quantity = quantity - ? WHERE id = ? AND quantity >= ?',
+          [item.quantity, item.product.id, item.quantity]
         );
 
         if (result.changes !== 1) {
           throw new Error(`INSUFFICIENT_STOCK:${item.product.name}`);
         }
-      }
-    }
 
-    // Log every product touched by the sale for sync/audit visibility.
-    for (const item of cartItems) {
-      if (!item.isCustom) {
         await db.runAsync(
-          "INSERT INTO sync_log (table_name, record_id, action, synced, created_at) VALUES ('products', ?, 'update', 0, ?)",
-          [item.product.id, now]
+          `INSERT INTO inventory_movements
+            (id, product_id, delta, reason, reference_type, reference_id, note, synced, applied, created_at)
+           VALUES (?, ?, ?, 'sale', 'invoice_items', ?, ?, 0, 1, ?)`,
+          [
+            generateId(),
+            item.product.id,
+            -item.quantity,
+            itemId,
+            invoiceId,
+            now,
+          ]
         );
       }
     }
@@ -156,6 +188,7 @@ export async function createInvoice(
     return {
       id: invoiceId,
       invoice_number: invoiceNumber,
+      invoice_code: invoiceCode,
       invoice_name: normalizedInvoiceName,
       invoice_type: invoiceType,
       merchant_name: merchantName,
@@ -175,6 +208,7 @@ export async function createInvoice(
     await db.execAsync('ROLLBACK');
     throw error;
   }
+  });
 }
 
 /**
@@ -184,6 +218,7 @@ export async function payInvoiceBalance(
   invoiceId: string,
   additionalPayment: number
 ): Promise<void> {
+  return runSerialized(async () => {
   const db = await getDatabase();
   const invoice = await db.getFirstAsync<Invoice>(
     'SELECT * FROM invoices WHERE id = ?',
@@ -200,6 +235,7 @@ export async function payInvoiceBalance(
     'UPDATE invoices SET amount_paid = ?, amount_due = ?, status = ?, synced = 0 WHERE id = ?',
     [newAmountPaid, newAmountDue, newStatus, invoiceId]
   );
+  });
 }
 
 /**

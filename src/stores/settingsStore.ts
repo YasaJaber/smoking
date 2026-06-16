@@ -3,7 +3,7 @@
 // ============================================================
 
 import { create } from 'zustand';
-import { getDatabase } from '../db/client';
+import { getDatabase, runSerialized } from '../db/client';
 import { DEFAULT_SERVER_URL } from '../constants/config';
 import type { Settings } from '../types';
 
@@ -29,6 +29,7 @@ const defaultSettings: Settings = {
   currency: 'EGP',
   low_stock_threshold: 5,
   server_url: DEFAULT_SERVER_URL,
+  sync_token: '',
   created_at: '',
   updated_at: '',
 };
@@ -62,12 +63,9 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   },
 
   updateSettings: async (updates: Partial<Settings>) => {
+    return runSerialized(async () => {
     const current = get().settings;
     const newSettings = { ...current, ...updates };
-
-    // Update in-memory state immediately so the UI (switches, inputs) reacts
-    // right away. Persisting to SQLite happens afterwards in the background.
-    set({ settings: newSettings });
 
     try {
       const db = await getDatabase();
@@ -88,13 +86,20 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       setClauses.push("updated_at = datetime('now')");
 
       if (values.length > 0) {
-        await db.runAsync(
+        const result = await db.runAsync(
           `UPDATE settings SET ${setClauses.join(', ')} WHERE id = 1`,
           values
         );
+        if (result.changes !== 1) {
+          throw new Error('SETTINGS_NOT_SAVED');
+        }
       }
+
+      set({ settings: newSettings });
     } catch (err) {
       console.error('Error updating settings:', err);
+      throw err;
     }
+    });
   },
 }));

@@ -33,7 +33,14 @@ import {
 } from '../../../src/services/inventoryService';
 import { useSettingsStore } from '../../../src/stores/settingsStore';
 import { formatCurrency } from '../../../src/utils/formatters';
-import { Colors, Gradients, Typography, Spacing, BorderRadius, CategoryColors } from '../../../src/constants/theme';
+import { Colors, Gradients, Typography, Spacing, BorderRadius } from '../../../src/constants/theme';
+import {
+  CATEGORY_EMOJI_GROUPS,
+  DEFAULT_CATEGORY_EMOJI,
+  getCategoryEmoji,
+  getEmojiColor,
+  normalizeCategoryEmoji,
+} from '../../../src/constants/categoryEmojis';
 import type { Product, Category } from '../../../src/types';
 
 export default function InventoryScreen() {
@@ -63,7 +70,13 @@ export default function InventoryScreen() {
 
   // Category form state
   const [catName, setCatName] = useState('');
-  const [catColor, setCatColor] = useState<string>(CategoryColors[0]);
+  const [catEmoji, setCatEmoji] = useState(DEFAULT_CATEGORY_EMOJI);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [activeEmojiGroup, setActiveEmojiGroup] = useState<string>(CATEGORY_EMOJI_GROUPS[0].key);
+
+  const selectedEmojiGroup =
+    CATEGORY_EMOJI_GROUPS.find((group) => group.key === activeEmojiGroup) ||
+    CATEGORY_EMOJI_GROUPS[0];
 
   // Reload data whenever the screen gains focus so categories/products stay
   // in sync with changes made elsewhere (or pulled in by a background sync).
@@ -170,30 +183,51 @@ export default function InventoryScreen() {
   };
 
   // === Category Modal ===
+  const openAddCategory = () => {
+    setCatName('');
+    setCatEmoji(DEFAULT_CATEGORY_EMOJI);
+    setShowEmojiPicker(false);
+    setActiveEmojiGroup(CATEGORY_EMOJI_GROUPS[0].key);
+    setShowCategoryModal(true);
+  };
+
   const handleSaveCategory = async () => {
     if (!catName.trim()) {
       Alert.alert('خطأ', 'يجب إدخال اسم القسم');
       return;
     }
     try {
-      await createCategory(catName.trim(), 'folder', catColor);
+      const emoji = normalizeCategoryEmoji(catEmoji);
+      await createCategory(catName.trim(), emoji, getEmojiColor(emoji));
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setShowCategoryModal(false);
       setCatName('');
+      setCatEmoji(DEFAULT_CATEGORY_EMOJI);
+      setShowEmojiPicker(false);
       await loadCategories();
     } catch (error) {
       Alert.alert('خطأ', 'حدث خطأ أثناء حفظ القسم');
     }
   };
 
+  const getCategory = (catId: string) => {
+    return categories.find((c) => c.id === catId) || null;
+  };
+
   const getCategoryName = (catId: string) => {
-    return categories.find((c) => c.id === catId)?.name || '';
+    return getCategory(catId)?.name || '';
   };
 
   const renderProduct = ({ item, index }: { item: Product; index: number }) => {
     const isLowStock = item.quantity <= item.min_quantity;
+    const category = getCategory(item.category_id);
     const profit = item.sell_price - item.cost_price;
     const profitPercent = item.cost_price > 0 ? (profit / item.cost_price) * 100 : 0;
+    const isLoss = profit < 0;
+    const profitLabel =
+      profit === 0
+        ? '0%'
+        : `${isLoss ? 'خسارة' : 'ربح'} ${isLoss ? '-' : '+'}${Math.abs(profitPercent).toFixed(0)}%`;
 
     return (
       <Animated.View entering={FadeInDown.duration(250).delay(index * 40)}>
@@ -203,7 +237,7 @@ export default function InventoryScreen() {
           style={[styles.productRow, { backgroundColor: colors.surface, borderColor: colors.border }]}
         >
           <View style={[styles.productIcon, { backgroundColor: colors.primaryGlow }]}>
-            <MaterialCommunityIcons name="package-variant-closed" size={22} color={colors.primary} />
+            <Text style={styles.productEmoji}>{getCategoryEmoji(category)}</Text>
           </View>
 
           <View style={styles.productInfo}>
@@ -223,8 +257,8 @@ export default function InventoryScreen() {
           </View>
 
           <View style={styles.productMeta}>
-            <Text style={[styles.profitText, { color: colors.accent }]}>
-              +{profitPercent.toFixed(0)}%
+            <Text style={[styles.profitText, { color: isLoss ? colors.danger : colors.accent }]}>
+              {profitLabel}
             </Text>
             <View style={[
               styles.stockChip,
@@ -248,7 +282,7 @@ export default function InventoryScreen() {
         <CurrentDateBadge />
         <View style={styles.headerActions}>
           <Pressable
-            onPress={() => setShowCategoryModal(true)}
+            onPress={openAddCategory}
             style={[styles.headerBtn, { backgroundColor: colors.surfaceLight }]}
           >
             <MaterialCommunityIcons name="folder-plus" size={18} color={colors.secondary} />
@@ -315,6 +349,7 @@ export default function InventoryScreen() {
                 borderColor: selectedCategory === cat.id ? cat.color : colors.border,
               }]}
             >
+              <Text style={styles.catChipEmoji}>{getCategoryEmoji(cat)}</Text>
               <Text style={[styles.catChipText, {
                 color: selectedCategory === cat.id ? '#fff' : colors.text,
               }]}>
@@ -376,6 +411,7 @@ export default function InventoryScreen() {
                       borderColor: prodCatId === cat.id ? cat.color : colors.border,
                     }]}
                   >
+                    <Text style={styles.catOptionEmoji}>{getCategoryEmoji(cat)}</Text>
                     <Text style={[styles.catOptionText, { color: prodCatId === cat.id ? '#fff' : colors.text }]}>
                       {cat.name}
                     </Text>
@@ -437,12 +473,21 @@ export default function InventoryScreen() {
 
               {/* Profit preview */}
               {prodCost && prodSell && (
-                <View style={[styles.profitPreview, { backgroundColor: colors.accentGlow }]}>
-                  <MaterialCommunityIcons name="trending-up" size={18} color={colors.accent} />
-                  <Text style={[styles.profitPreviewText, { color: colors.accent }]}>
-                    الربح: {formatCurrency((parseFloat(prodSell) || 0) - (parseFloat(prodCost) || 0), currency)} للقطعة
-                  </Text>
-                </View>
+                (() => {
+                  const profit = (parseFloat(prodSell) || 0) - (parseFloat(prodCost) || 0);
+                  const isLoss = profit < 0;
+                  const label = isLoss ? 'الخسارة' : 'الربح';
+                  const color = isLoss ? colors.danger : colors.accent;
+
+                  return (
+                    <View style={[styles.profitPreview, { backgroundColor: isLoss ? colors.dangerGlow : colors.accentGlow }]}>
+                      <MaterialCommunityIcons name={isLoss ? 'trending-down' : 'trending-up'} size={18} color={color} />
+                      <Text style={[styles.profitPreviewText, { color }]}>
+                        {label}: {formatCurrency(Math.abs(profit), currency)} للقطعة
+                      </Text>
+                    </View>
+                  );
+                })()
               )}
             </ScrollView>
 
@@ -473,41 +518,113 @@ export default function InventoryScreen() {
               </Pressable>
             </View>
 
-            <Text style={[styles.label, { color: colors.textSecondary }]}>اسم القسم</Text>
-            <TextInput
-              style={[styles.input, { backgroundColor: colors.surfaceLight, borderColor: colors.border, color: colors.text }]}
-              value={catName}
-              onChangeText={setCatName}
-              placeholder="مثال: المشروبات"
-              placeholderTextColor={colors.textMuted}
-            />
+            <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+              <Text style={[styles.label, { color: colors.textSecondary }]}>اسم القسم</Text>
+              <TextInput
+                style={[styles.input, { backgroundColor: colors.surfaceLight, borderColor: colors.border, color: colors.text }]}
+                value={catName}
+                onChangeText={setCatName}
+                placeholder="مثال: المشروبات"
+                placeholderTextColor={colors.textMuted}
+              />
 
-            <Text style={[styles.label, { color: colors.textSecondary }]}>اللون</Text>
-            <View style={styles.colorPicker}>
-              {CategoryColors.map((c) => (
+              <Text style={[styles.label, { color: colors.textSecondary }]}>الإيموجي</Text>
+              <View style={styles.emojiSelectRow}>
                 <Pressable
-                  key={c}
-                  onPress={() => setCatColor(c)}
+                  onPress={() => setShowEmojiPicker((visible) => !visible)}
                   style={[
-                    styles.colorOption,
-                    { backgroundColor: c, borderColor: catColor === c ? '#fff' : 'transparent' },
+                    styles.emojiSelect,
+                    { backgroundColor: colors.surfaceLight, borderColor: colors.border },
                   ]}
                 >
-                  {catColor === c && <MaterialCommunityIcons name="check" size={16} color="#fff" />}
+                  <Text style={styles.selectedEmoji}>{catEmoji}</Text>
+                  <MaterialCommunityIcons
+                    name={showEmojiPicker ? 'chevron-up' : 'chevron-down'}
+                    size={20}
+                    color={colors.textSecondary}
+                  />
                 </Pressable>
-              ))}
-            </View>
+                <TextInput
+                  style={[
+                    styles.emojiInput,
+                    { backgroundColor: colors.surfaceLight, borderColor: colors.border, color: colors.text },
+                  ]}
+                  value={catEmoji}
+                  onChangeText={setCatEmoji}
+                  placeholder="😀"
+                  placeholderTextColor={colors.textMuted}
+                  maxLength={8}
+                />
+              </View>
 
-            <Pressable onPress={handleSaveCategory} style={{ marginTop: Spacing.lg }}>
-              <LinearGradient
-                colors={Gradients.primary as unknown as readonly [string, string, ...string[]]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
-                style={styles.saveBtn}
-              >
-                <Text style={styles.saveBtnText}>حفظ</Text>
-              </LinearGradient>
-            </Pressable>
+              {showEmojiPicker && (
+                <View style={[styles.emojiPicker, { backgroundColor: colors.surfaceLight, borderColor: colors.border }]}>
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={styles.emojiTabs}
+                  >
+                    {CATEGORY_EMOJI_GROUPS.map((group) => {
+                      const isActive = group.key === activeEmojiGroup;
+                      return (
+                        <Pressable
+                          key={group.key}
+                          onPress={() => setActiveEmojiGroup(group.key)}
+                          style={[
+                            styles.emojiTab,
+                            {
+                              backgroundColor: isActive ? colors.primary : colors.surface,
+                              borderColor: isActive ? colors.primary : colors.border,
+                            },
+                          ]}
+                        >
+                          <Text style={[styles.emojiTabText, { color: isActive ? '#fff' : colors.textSecondary }]}>
+                            {group.label}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </ScrollView>
+
+                  <ScrollView style={styles.emojiGridScroll} showsVerticalScrollIndicator={false}>
+                    <View style={styles.emojiGrid}>
+                      {selectedEmojiGroup.emojis.map((emoji, emojiIndex) => {
+                        const isSelected = catEmoji === emoji;
+                        return (
+                          <Pressable
+                            key={`${selectedEmojiGroup.key}-${emoji}-${emojiIndex}`}
+                            onPress={() => {
+                              setCatEmoji(emoji);
+                              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                            }}
+                            style={[
+                              styles.emojiOption,
+                              {
+                                backgroundColor: isSelected ? colors.primaryGlow : colors.surface,
+                                borderColor: isSelected ? colors.primary : colors.border,
+                              },
+                            ]}
+                          >
+                            <Text style={styles.emojiOptionText}>{emoji}</Text>
+                          </Pressable>
+                        );
+                      })}
+                    </View>
+                  </ScrollView>
+                </View>
+              )}
+
+              <Pressable onPress={handleSaveCategory} style={{ marginTop: Spacing.lg }}>
+                <LinearGradient
+                  colors={Gradients.primary as unknown as readonly [string, string, ...string[]]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={styles.saveBtn}
+                >
+                  <Text style={styles.saveBtnText}>حفظ</Text>
+                </LinearGradient>
+              </Pressable>
+            </ScrollView>
           </Animated.View>
         </View>
       </Modal>
@@ -559,10 +676,13 @@ const styles = StyleSheet.create({
   searchInput: { flex: 1, paddingVertical: Spacing.sm, fontSize: Typography.fontSize.sm, marginLeft: Spacing.sm },
   catFilter: { gap: Spacing.sm, paddingBottom: Spacing.xs },
   catChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.xs,
     borderRadius: BorderRadius.full,
     borderWidth: 1,
+    gap: Spacing.xs,
   },
   catChipText: { fontSize: Typography.fontSize.xs, fontWeight: '600' },
   list: { padding: Spacing.base, gap: Spacing.sm },
@@ -582,6 +702,10 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.md,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  productEmoji: {
+    fontSize: 24,
+    lineHeight: 30,
   },
   productInfo: { flex: 1 },
   prodName: { fontSize: Typography.fontSize.sm, fontWeight: '600' },
@@ -604,7 +728,7 @@ const styles = StyleSheet.create({
   // Modal styles
   modalOverlay: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   modal: { maxWidth: '100%', maxHeight: '85%', borderRadius: BorderRadius['2xl'], padding: Spacing.xl },
-  smallModal: { maxHeight: '60%' },
+  smallModal: { maxHeight: '88%' },
   modalHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -622,12 +746,17 @@ const styles = StyleSheet.create({
   },
   catSelect: { maxHeight: 40, marginTop: Spacing.xs },
   catOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingHorizontal: Spacing.base,
     paddingVertical: Spacing.xs,
     borderRadius: BorderRadius.full,
     borderWidth: 1,
     marginRight: Spacing.sm,
+    gap: Spacing.xs,
   },
+  catChipEmoji: { fontSize: 14, lineHeight: 18 },
+  catOptionEmoji: { fontSize: 14, lineHeight: 18 },
   catOptionText: { fontSize: Typography.fontSize.sm, fontWeight: '600' },
   row: { flexDirection: 'row', gap: Spacing.md, flexWrap: 'wrap' },
   halfField: { flex: 1, minWidth: 120 },
@@ -649,13 +778,72 @@ const styles = StyleSheet.create({
     gap: Spacing.sm,
   },
   saveBtnText: { color: '#fff', fontSize: Typography.fontSize.base, fontWeight: '700' },
-  colorPicker: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm, marginTop: Spacing.sm },
-  colorOption: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    justifyContent: 'center',
+  emojiSelectRow: {
+    flexDirection: 'row',
+    gap: Spacing.sm,
     alignItems: 'center',
-    borderWidth: 3,
+  },
+  emojiSelect: {
+    flex: 1,
+    height: 48,
+    borderWidth: 1,
+    borderRadius: BorderRadius.md,
+    paddingHorizontal: Spacing.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  selectedEmoji: {
+    fontSize: 28,
+    lineHeight: 34,
+  },
+  emojiInput: {
+    width: 76,
+    height: 48,
+    borderWidth: 1,
+    borderRadius: BorderRadius.md,
+    textAlign: 'center',
+    fontSize: Typography.fontSize.xl,
+    paddingHorizontal: Spacing.xs,
+  },
+  emojiPicker: {
+    borderWidth: 1,
+    borderRadius: BorderRadius.lg,
+    padding: Spacing.sm,
+    marginTop: Spacing.sm,
+  },
+  emojiTabs: {
+    gap: Spacing.xs,
+    paddingBottom: Spacing.sm,
+  },
+  emojiTab: {
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.xs,
+    borderRadius: BorderRadius.full,
+    borderWidth: 1,
+  },
+  emojiTabText: {
+    fontSize: Typography.fontSize.xs,
+    fontWeight: '700',
+  },
+  emojiGridScroll: {
+    maxHeight: 180,
+  },
+  emojiGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: Spacing.xs,
+  },
+  emojiOption: {
+    width: 42,
+    height: 42,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emojiOptionText: {
+    fontSize: 24,
+    lineHeight: 30,
   },
 });

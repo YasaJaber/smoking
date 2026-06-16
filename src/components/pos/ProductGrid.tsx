@@ -2,18 +2,20 @@
 // ProductGrid - Grid display of products for POS
 // ============================================================
 
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import { View, Text, ScrollView, Pressable, StyleSheet } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import Animated, { FadeInUp } from 'react-native-reanimated';
 import { Colors, Typography, Spacing, BorderRadius } from '../../constants/theme';
+import { getCategoryEmoji } from '../../constants/categoryEmojis';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { formatCurrency } from '../../utils/formatters';
-import type { Product } from '../../types';
+import type { Category, Product } from '../../types';
 
 interface ProductGridProps {
   products: Product[];
+  categories: Category[];
   onProductPress: (product: Product) => void;
 }
 
@@ -28,8 +30,9 @@ function getNumColumns(containerWidth: number): number {
   return 2;
 }
 
-function ProductItem({ product, onPress, index, cardWidth }: {
+function ProductItem({ product, category, onPress, index, cardWidth }: {
   product: Product;
+  category?: Category;
   onPress: (product: Product) => void;
   index: number;
   cardWidth: number;
@@ -62,11 +65,7 @@ function ProductItem({ product, onPress, index, cardWidth }: {
       ]}
     >
       <View style={[styles.productIcon, { backgroundColor: colors.glass }]}>
-        <MaterialCommunityIcons
-          name="package-variant-closed"
-          size={28}
-          color={colors.primary}
-        />
+        <Text style={styles.productEmoji}>{getCategoryEmoji(category)}</Text>
       </View>
 
       <Text
@@ -96,11 +95,15 @@ function ProductItem({ product, onPress, index, cardWidth }: {
   );
 }
 
-export function ProductGrid({ products, onProductPress }: ProductGridProps) {
+export function ProductGrid({ products, categories, onProductPress }: ProductGridProps) {
   const darkMode = useSettingsStore((s) => s.settings.dark_mode);
   const colors = darkMode ? Colors.dark : Colors.light;
   const [containerWidth, setContainerWidth] = useState(0);
   const numColumns = getNumColumns(containerWidth);
+  const categoryById = useMemo(
+    () => new Map(categories.map((category) => [category.id, category])),
+    [categories]
+  );
 
   const GAP = Spacing.md;
   const horizontalPadding = Spacing.md * 2;
@@ -141,6 +144,7 @@ export function ProductGrid({ products, onProductPress }: ProductGridProps) {
               <ProductItem
                 key={product.id}
                 product={product}
+                category={categoryById.get(product.category_id)}
                 onPress={onProductPress}
                 index={index}
                 cardWidth={cardWidth}
@@ -186,6 +190,10 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.md,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  productEmoji: {
+    fontSize: 28,
+    lineHeight: 34,
   },
   productName: {
     fontSize: Typography.fontSize.base,

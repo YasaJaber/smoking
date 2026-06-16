@@ -8,7 +8,13 @@ const { runSync } = require('../lib/syncCore');
 function setCors(res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-sync-token');
+}
+
+function isAuthorized(req) {
+  const expected = process.env.SYNC_TOKEN;
+  if (!expected) return false;
+  return req.headers['x-sync-token'] === expected;
 }
 
 module.exports = async (req, res) => {
@@ -19,6 +25,12 @@ module.exports = async (req, res) => {
   }
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'method_not_allowed' });
+  }
+  if (!process.env.SYNC_TOKEN) {
+    return res.status(503).json({ error: 'sync_token_not_configured' });
+  }
+  if (!isAuthorized(req)) {
+    return res.status(401).json({ error: 'unauthorized' });
   }
 
   try {

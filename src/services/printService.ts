@@ -7,7 +7,7 @@ import * as Sharing from 'expo-sharing';
 import { Platform } from 'react-native';
 import { buildReceiptHtml } from '../utils/receipt';
 import { getInvoiceWithItems } from './invoiceService';
-import { generateInvoiceNumber } from '../utils/formatters';
+import { formatInvoiceCode } from '../utils/formatters';
 import { useSettingsStore } from '../stores/settingsStore';
 import { useAuthStore } from '../stores/authStore';
 import type { Invoice, InvoiceItem } from '../types';
@@ -62,7 +62,7 @@ export async function shareInvoicePdf(
     await Sharing.shareAsync(uri, {
       UTI: 'com.adobe.pdf',
       mimeType: 'application/pdf',
-      dialogTitle: `فاتورة ${invoice.invoice_name || generateInvoiceNumber(invoice.invoice_number)}`,
+      dialogTitle: `فاتورة ${invoice.invoice_name || formatInvoiceCode(invoice.invoice_number, invoice.invoice_code)}`,
     });
   }
 

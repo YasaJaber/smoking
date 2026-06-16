@@ -342,6 +342,7 @@ export default function POSScreen() {
           <View style={styles.productGridWrapper}>
             <ProductGrid
               products={products}
+              categories={categories}
               onProductPress={handleProductPress}
             />
           </View>

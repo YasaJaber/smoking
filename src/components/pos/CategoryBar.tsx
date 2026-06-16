@@ -7,6 +7,7 @@ import { View, Text, ScrollView, Pressable, StyleSheet } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { Colors, Typography, Spacing, BorderRadius } from '../../constants/theme';
+import { getCategoryEmoji } from '../../constants/categoryEmojis';
 import { useSettingsStore } from '../../stores/settingsStore';
 import type { Category } from '../../types';
 
@@ -76,11 +77,7 @@ export function CategoryBar({ categories, selectedId, onSelect }: CategoryBarPro
               },
             ]}
           >
-            <MaterialCommunityIcons
-              name={(cat.icon as any) || 'folder'}
-              size={15}
-              color={isActive ? '#fff' : cat.color}
-            />
+            <Text style={styles.chipEmoji}>{getCategoryEmoji(cat)}</Text>
             <Text
               style={[
                 styles.chipText,
@@ -128,5 +125,9 @@ const styles = StyleSheet.create({
     fontSize: Typography.fontSize.xs,
     fontWeight: '600',
     lineHeight: 14,
+  },
+  chipEmoji: {
+    fontSize: 15,
+    lineHeight: 18,
   },
 });

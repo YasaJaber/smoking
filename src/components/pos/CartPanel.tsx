@@ -127,6 +127,7 @@ export function CartPanel({ onCheckout }: CartPanelProps) {
               exiting={FadeOut.duration(150)}
               style={[
                 styles.cartItem,
+                item.isCustom && styles.cartItemCustom,
                 {
                   backgroundColor: colors.surfaceLight,
                   borderColor: colors.border,
@@ -155,6 +156,14 @@ export function CartPanel({ onCheckout }: CartPanelProps) {
                   >
                     {formatCurrency(item.product.sell_price, currency)} × {item.quantity}
                   </Text>
+                  {item.isCustom && (
+                    <Text
+                      style={[styles.itemProfit, { color: colors.accent }]}
+                      numberOfLines={1}
+                    >
+                      مكسب: {formatCurrency((item.product.sell_price - item.product.cost_price) * item.quantity, currency)}
+                    </Text>
+                  )}
                 </View>
 
                 <View style={styles.itemActions}>
@@ -307,6 +316,9 @@ const styles = StyleSheet.create({
     maxHeight: 64,
     overflow: 'hidden',
   },
+  cartItemCustom: {
+    maxHeight: 82,
+  },
   itemMain: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -340,6 +352,11 @@ const styles = StyleSheet.create({
   },
   itemPrice: {
     fontSize: Typography.fontSize.xs,
+    marginTop: 1,
+  },
+  itemProfit: {
+    fontSize: Typography.fontSize.xs,
+    fontWeight: '700',
     marginTop: 1,
   },
   itemActions: {

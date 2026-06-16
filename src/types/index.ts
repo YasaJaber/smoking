@@ -17,6 +17,7 @@ export interface Settings {
   currency: string;
   low_stock_threshold: number;
   server_url: string;
+  sync_token: string;
   created_at: string;
   updated_at: string;
 }
@@ -61,6 +62,7 @@ export interface Product {
 export interface Invoice {
   id: string;
   invoice_number: number;
+  invoice_code: string | null;
   invoice_name: string | null;
   invoice_type: 'sale' | 'merchant';
   merchant_name: string | null;
@@ -106,6 +108,19 @@ export interface SyncLog {
   created_at: string;
 }
 
+export interface InventoryMovement {
+  id: string;
+  product_id: string;
+  delta: number;
+  reason: 'sale' | 'purchase' | 'purchase_reversal' | 'adjustment';
+  reference_type: string;
+  reference_id: string;
+  note: string | null;
+  synced: boolean;
+  applied: boolean;
+  created_at: string;
+}
+
 // Analytics types
 export interface DailySales {
   date: string;
@@ -115,7 +130,7 @@ export interface DailySales {
 }
 
 export interface TopProduct {
-  product_id: string;
+  product_id: string | null;
   product_name: string;
   total_sold: number;
   total_revenue: number;
@@ -147,6 +162,7 @@ export interface Purchase {
   remaining: number;
   note: string | null;
   status: 'open' | 'closed';
+  is_deleted?: boolean;
   synced: boolean;
   created_at: string;
   updated_at: string;
@@ -162,6 +178,7 @@ export interface PurchaseItem {
   sell_price: number;
   quantity: number;
   total_cost: number;
+  is_deleted?: boolean;
   synced: boolean;
   created_at: string;
 }

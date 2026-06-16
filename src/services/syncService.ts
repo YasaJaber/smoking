@@ -11,7 +11,7 @@
 // avoids clock-skew problems between multiple devices.
 // ============================================================
 
-import { getDatabase, getMeta, setMeta, generateId } from '../db/client';
+import { getDatabase, getMeta, setMeta, getOrCreateDeviceId, runSerialized } from '../db/client';
 
 const SYNC_PATH = '/api/sync';
 const REQUEST_TIMEOUT_MS = 30000;
@@ -31,16 +31,18 @@ interface SyncPayload {
     invoice_items?: any[];
     purchases?: any[];
     purchase_items?: any[];
+    inventory_movements?: any[];
   };
 }
 
 const TABLE_COLUMNS: Record<string, string[]> = {
   categories: ['id', 'name', 'icon', 'color', 'sort_order', 'is_active', 'synced', 'created_at', 'updated_at'],
-  products: ['id', 'category_id', 'name', 'barcode', 'cost_price', 'sell_price', 'quantity', 'min_quantity', 'image_uri', 'is_active', 'synced', 'created_at', 'updated_at'],
-  invoices: ['id', 'invoice_number', 'invoice_name', 'invoice_type', 'merchant_name', 'merchant_phone', 'user_id', 'subtotal', 'tax_amount', 'total', 'amount_paid', 'amount_due', 'payment_method', 'status', 'synced', 'created_at'],
+  products: ['id', 'category_id', 'name', 'barcode', 'cost_price', 'sell_price', 'min_quantity', 'image_uri', 'is_active', 'synced', 'created_at', 'updated_at'],
+  invoices: ['id', 'invoice_number', 'invoice_code', 'invoice_name', 'invoice_type', 'merchant_name', 'merchant_phone', 'user_id', 'subtotal', 'tax_amount', 'total', 'amount_paid', 'amount_due', 'payment_method', 'status', 'synced', 'created_at'],
   invoice_items: ['id', 'invoice_id', 'product_id', 'product_name', 'quantity', 'unit_cost', 'unit_price', 'total', 'created_at'],
-  purchases: ['id', 'budget', 'spent', 'remaining', 'note', 'status', 'synced', 'created_at', 'updated_at'],
-  purchase_items: ['id', 'purchase_id', 'product_id', 'product_name', 'category_id', 'cost_price', 'sell_price', 'quantity', 'total_cost', 'synced', 'created_at'],
+  purchases: ['id', 'budget', 'spent', 'remaining', 'note', 'status', 'is_deleted', 'synced', 'created_at', 'updated_at'],
+  purchase_items: ['id', 'purchase_id', 'product_id', 'product_name', 'category_id', 'cost_price', 'sell_price', 'quantity', 'total_cost', 'is_deleted', 'synced', 'created_at'],
+  inventory_movements: ['id', 'product_id', 'delta', 'reason', 'reference_type', 'reference_id', 'note', 'synced', 'applied', 'created_at'],
 };
 
 /**
@@ -57,16 +59,15 @@ async function getServerUrl(): Promise<string | null> {
 }
 
 /**
- * Stable per-install device id (used by the server to skip echoing back our
- * own pushes). Generated once and persisted in the meta table.
+ * Get the configured sync token. Production servers reject sync without it.
  */
-async function getDeviceId(): Promise<string> {
-  let id = await getMeta('device_id');
-  if (!id) {
-    id = generateId();
-    await setMeta('device_id', id);
-  }
-  return id;
+async function getSyncToken(): Promise<string | null> {
+  const db = await getDatabase();
+  const row = await db.getFirstAsync<{ sync_token: string }>(
+    'SELECT sync_token FROM settings WHERE id = 1'
+  );
+  const token = row?.sync_token?.trim();
+  return token || null;
 }
 
 /**
@@ -133,7 +134,11 @@ async function collectLocalChanges() {
     purchase_items = Array.from(byId.values());
   }
 
-  return { categories, products, invoices, invoice_items, purchases, purchase_items };
+  const inventory_movements = await db.getAllAsync<any>(
+    `SELECT ${TABLE_COLUMNS.inventory_movements.join(', ')} FROM inventory_movements WHERE synced = 0`
+  );
+
+  return { categories, products, invoices, invoice_items, purchases, purchase_items, inventory_movements };
 }
 
 /**
@@ -165,6 +170,64 @@ async function applyPulledRows(table: string, rows: any[]): Promise<void> {
 }
 
 /**
+ * Insert pulled inventory deltas and apply each new movement exactly once.
+ * This is what prevents two offline sales from collapsing into one
+ * Last-Write-Wins product quantity.
+ */
+async function applyPulledInventoryMovements(rows: any[]): Promise<void> {
+  if (!rows || rows.length === 0) return;
+  const db = await getDatabase();
+  const columns = TABLE_COLUMNS.inventory_movements;
+  const placeholders = columns.map(() => '?').join(', ');
+
+  for (const row of rows) {
+    const values = columns.map((c) => {
+      if (c === 'synced') return 1;
+      if (c === 'applied') return 0;
+      return row[c] === undefined ? null : row[c];
+    });
+
+    await db.runAsync(
+      `INSERT OR IGNORE INTO inventory_movements (${columns.join(', ')}) VALUES (${placeholders})`,
+      values
+    );
+
+    await applyPendingInventoryMovement(row.id);
+  }
+}
+
+async function applyPendingInventoryMovement(id: string): Promise<void> {
+  const db = await getDatabase();
+  const movement = await db.getFirstAsync<{ id: string; product_id: string; delta: number; applied: number }>(
+    'SELECT id, product_id, delta, applied FROM inventory_movements WHERE id = ?',
+    [id]
+  );
+
+  if (!movement || movement.applied) return;
+
+  await db.execAsync('BEGIN TRANSACTION');
+  try {
+    const result = await db.runAsync(
+      'UPDATE products SET quantity = quantity + ? WHERE id = ?',
+      [movement.delta, movement.product_id]
+    );
+
+    if (result.changes !== 1) {
+      throw new Error(`PRODUCT_NOT_FOUND_FOR_MOVEMENT:${movement.product_id}`);
+    }
+
+    await db.runAsync(
+      'UPDATE inventory_movements SET applied = 1 WHERE id = ?',
+      [movement.id]
+    );
+    await db.execAsync('COMMIT');
+  } catch (error) {
+    await db.execAsync('ROLLBACK');
+    throw error;
+  }
+}
+
+/**
  * Mark a set of rows as synced after a successful push.
  */
 async function markSynced(table: string, ids: string[]): Promise<void> {
@@ -182,12 +245,17 @@ async function markSynced(table: string, ids: string[]): Promise<void> {
  * caller can surface a friendly message.
  */
 export async function syncNow(): Promise<SyncResult> {
+  return runSerialized(syncNowUnlocked);
+}
+
+async function syncNowUnlocked(): Promise<SyncResult> {
   const base = await getServerUrl();
   if (!base) {
     throw new Error('NO_SERVER');
   }
 
-  const deviceId = await getDeviceId();
+  const deviceId = await getOrCreateDeviceId();
+  const syncToken = await getSyncToken();
   const lastSyncAt = parseInt((await getMeta('last_sync')) || '0', 10);
 
   const local = await collectLocalChanges();
@@ -197,11 +265,15 @@ export async function syncNow(): Promise<SyncResult> {
     local.invoices.length +
     local.invoice_items.length +
     local.purchases.length +
-    local.purchase_items.length;
+    local.purchase_items.length +
+    local.inventory_movements.length;
 
   const response = await fetchWithTimeout(`${base}${SYNC_PATH}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      ...(syncToken ? { 'x-sync-token': syncToken } : {}),
+    },
     body: JSON.stringify({
       deviceId,
       lastSyncAt,
@@ -223,11 +295,13 @@ export async function syncNow(): Promise<SyncResult> {
   await applyPulledRows('invoice_items', remote.invoice_items || []);
   await applyPulledRows('purchases', remote.purchases || []);
   await applyPulledRows('purchase_items', remote.purchase_items || []);
+  await applyPulledInventoryMovements(remote.inventory_movements || []);
 
   // Mark our pushed rows as synced.
   await markSynced('categories', local.categories.map((r) => r.id));
   await markSynced('products', local.products.map((r) => r.id));
   await markSynced('invoices', local.invoices.map((r) => r.id));
+  await markSynced('inventory_movements', local.inventory_movements.map((r) => r.id));
   await markSynced('purchases', local.purchases.map((r) => r.id));
   await markSynced('purchase_items', local.purchase_items.map((r) => r.id));
 
@@ -239,8 +313,10 @@ export async function syncNow(): Promise<SyncResult> {
     (remote.categories?.length || 0) +
     (remote.products?.length || 0) +
     (remote.invoices?.length || 0) +
+    (remote.invoice_items?.length || 0) +
     (remote.purchases?.length || 0) +
-    (remote.purchase_items?.length || 0);
+    (remote.purchase_items?.length || 0) +
+    (remote.inventory_movements?.length || 0);
 
   return { pushed: pushedCount, pulled: pulledCount, serverTime: payload.serverTime };
 }
@@ -255,6 +331,7 @@ export async function getPendingChangesCount(): Promise<number> {
       (SELECT COUNT(*) FROM categories WHERE synced = 0) +
       (SELECT COUNT(*) FROM products WHERE synced = 0) +
       (SELECT COUNT(*) FROM invoices WHERE synced = 0) +
+      (SELECT COUNT(*) FROM inventory_movements WHERE synced = 0) +
       (SELECT COUNT(*) FROM purchases WHERE synced = 0) +
       (SELECT COUNT(*) FROM purchase_items WHERE synced = 0) AS count`
   );

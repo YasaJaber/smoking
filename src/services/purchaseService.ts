@@ -2,7 +2,7 @@
 // Purchase Service - Business logic for budget-based purchasing
 // ============================================================
 
-import { getDatabase, generateId } from '../db/client';
+import { getDatabase, generateId, runSerialized } from '../db/client';
 import { getLocalDateKey, getLocalDayBounds } from '../utils/dates';
 import type { Purchase, PurchaseItem, Product } from '../types';
 
@@ -17,7 +17,7 @@ export async function getTodayPurchase(): Promise<Purchase | null> {
   const [startOfDay, endOfDay] = getLocalDayBounds(getLocalDateKey());
 
   return db.getFirstAsync<Purchase>(
-    "SELECT * FROM purchases WHERE status = 'open' AND created_at >= ? AND created_at < ? ORDER BY created_at DESC LIMIT 1",
+    "SELECT * FROM purchases WHERE status = 'open' AND is_deleted = 0 AND created_at >= ? AND created_at < ? ORDER BY created_at DESC LIMIT 1",
     [startOfDay, endOfDay]
   );
 }
@@ -29,13 +29,14 @@ export async function createPurchase(
   budget: number,
   note?: string
 ): Promise<Purchase> {
+  return runSerialized(async () => {
   const db = await getDatabase();
   const id = generateId();
   const now = new Date().toISOString();
 
   await db.runAsync(
-    `INSERT INTO purchases (id, budget, spent, remaining, note, status, synced, created_at, updated_at)
-     VALUES (?, ?, 0, ?, ?, 'open', 0, ?, ?)`,
+    `INSERT INTO purchases (id, budget, spent, remaining, note, status, is_deleted, synced, created_at, updated_at)
+     VALUES (?, ?, 0, ?, ?, 'open', 0, 0, ?, ?)`,
     [id, budget, budget, note?.trim() || null, now, now]
   );
 
@@ -50,6 +51,7 @@ export async function createPurchase(
     created_at: now,
     updated_at: now,
   };
+  });
 }
 
 /**
@@ -58,7 +60,7 @@ export async function createPurchase(
 export async function getAllPurchases(): Promise<Purchase[]> {
   const db = await getDatabase();
   return db.getAllAsync<Purchase>(
-    'SELECT * FROM purchases ORDER BY created_at DESC'
+    'SELECT * FROM purchases WHERE is_deleted = 0 ORDER BY created_at DESC'
   );
 }
 
@@ -68,7 +70,7 @@ export async function getAllPurchases(): Promise<Purchase[]> {
 export async function getPurchase(id: string): Promise<Purchase | null> {
   const db = await getDatabase();
   return db.getFirstAsync<Purchase>(
-    'SELECT * FROM purchases WHERE id = ?',
+    'SELECT * FROM purchases WHERE id = ? AND is_deleted = 0',
     [id]
   );
 }
@@ -82,14 +84,14 @@ export async function getPurchaseWithItems(
   const db = await getDatabase();
 
   const purchase = await db.getFirstAsync<Purchase>(
-    'SELECT * FROM purchases WHERE id = ?',
+    'SELECT * FROM purchases WHERE id = ? AND is_deleted = 0',
     [purchaseId]
   );
 
   if (!purchase) return null;
 
   const items = await db.getAllAsync<PurchaseItem>(
-    'SELECT * FROM purchase_items WHERE purchase_id = ? ORDER BY created_at DESC',
+    'SELECT * FROM purchase_items WHERE purchase_id = ? AND is_deleted = 0 ORDER BY created_at DESC',
     [purchaseId]
   );
 
@@ -113,12 +115,13 @@ export async function addPurchaseItem(
     quantity: number;
   }
 ): Promise<PurchaseItem> {
+  return runSerialized(async () => {
   const db = await getDatabase();
   const totalCost = data.cost_price * data.quantity;
 
   // Verify budget
   const purchase = await db.getFirstAsync<Purchase>(
-    'SELECT * FROM purchases WHERE id = ?',
+    'SELECT * FROM purchases WHERE id = ? AND is_deleted = 0',
     [purchaseId]
   );
 
@@ -130,14 +133,15 @@ export async function addPurchaseItem(
 
   const itemId = generateId();
   const now = new Date().toISOString();
+  let finalProductId = data.product_id;
 
   await db.execAsync('BEGIN TRANSACTION');
 
   try {
     // 1. Insert purchase item
     await db.runAsync(
-      `INSERT INTO purchase_items (id, purchase_id, product_id, product_name, category_id, cost_price, sell_price, quantity, total_cost, synced, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)`,
+      `INSERT INTO purchase_items (id, purchase_id, product_id, product_name, category_id, cost_price, sell_price, quantity, total_cost, is_deleted, synced, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?)`,
       [
         itemId,
         purchaseId,
@@ -168,9 +172,17 @@ export async function addPurchaseItem(
         'UPDATE products SET quantity = quantity + ?, cost_price = ?, synced = 0, updated_at = ? WHERE id = ?',
         [data.quantity, data.cost_price, now, data.product_id]
       );
+
+      await db.runAsync(
+        `INSERT INTO inventory_movements
+          (id, product_id, delta, reason, reference_type, reference_id, note, synced, applied, created_at)
+         VALUES (?, ?, ?, 'purchase', 'purchase_items', ?, ?, 0, 1, ?)`,
+        [generateId(), data.product_id, data.quantity, itemId, purchaseId, now]
+      );
     } else {
       // New product → create in inventory
       const newProductId = generateId();
+      finalProductId = newProductId;
       await db.runAsync(
         `INSERT INTO products (id, category_id, name, cost_price, sell_price, quantity, min_quantity, is_active, synced, created_at, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, 5, 1, 0, ?, ?)`,
@@ -191,6 +203,13 @@ export async function addPurchaseItem(
         'UPDATE purchase_items SET product_id = ?, synced = 0 WHERE id = ?',
         [newProductId, itemId]
       );
+
+      await db.runAsync(
+        `INSERT INTO inventory_movements
+          (id, product_id, delta, reason, reference_type, reference_id, note, synced, applied, created_at)
+         VALUES (?, ?, ?, 'purchase', 'purchase_items', ?, ?, 0, 1, ?)`,
+        [generateId(), newProductId, data.quantity, itemId, purchaseId, now]
+      );
     }
 
     await db.execAsync('COMMIT');
@@ -198,7 +217,7 @@ export async function addPurchaseItem(
     return {
       id: itemId,
       purchase_id: purchaseId,
-      product_id: data.product_id,
+      product_id: finalProductId,
       product_name: data.product_name.trim(),
       category_id: data.category_id,
       cost_price: data.cost_price,
@@ -212,6 +231,7 @@ export async function addPurchaseItem(
     await db.execAsync('ROLLBACK');
     throw error;
   }
+  });
 }
 
 /**
@@ -220,10 +240,11 @@ export async function addPurchaseItem(
  * - Decreases product quantity in inventory
  */
 export async function deletePurchaseItem(itemId: string): Promise<void> {
+  return runSerialized(async () => {
   const db = await getDatabase();
 
   const item = await db.getFirstAsync<PurchaseItem>(
-    'SELECT * FROM purchase_items WHERE id = ?',
+    'SELECT * FROM purchase_items WHERE id = ? AND is_deleted = 0',
     [itemId]
   );
 
@@ -234,8 +255,23 @@ export async function deletePurchaseItem(itemId: string): Promise<void> {
   await db.execAsync('BEGIN TRANSACTION');
 
   try {
-    // 1. Remove the item
-    await db.runAsync('DELETE FROM purchase_items WHERE id = ?', [itemId]);
+    if (item.product_id) {
+      const stock = await db.getFirstAsync<{ quantity: number; name: string }>(
+        'SELECT quantity, name FROM products WHERE id = ?',
+        [item.product_id]
+      );
+      if (!stock) throw new Error('PRODUCT_NOT_FOUND');
+      if (stock.quantity < item.quantity) {
+        throw new Error(`INSUFFICIENT_STOCK_TO_REVERSE:${stock.name}:${stock.quantity}`);
+      }
+    }
+
+    // 1. Soft-delete the item so the deletion syncs instead of reappearing
+    // from the cloud on another device.
+    await db.runAsync(
+      'UPDATE purchase_items SET is_deleted = 1, synced = 0 WHERE id = ?',
+      [itemId]
+    );
 
     // 2. Update purchase budget (return cost)
     const purchase = await db.getFirstAsync<Purchase>(
@@ -256,8 +292,15 @@ export async function deletePurchaseItem(itemId: string): Promise<void> {
     // 3. Decrease inventory quantity
     if (item.product_id) {
       await db.runAsync(
-        'UPDATE products SET quantity = MAX(0, quantity - ?), synced = 0, updated_at = ? WHERE id = ?',
-        [item.quantity, now, item.product_id]
+        'UPDATE products SET quantity = quantity - ? WHERE id = ?',
+        [item.quantity, item.product_id]
+      );
+
+      await db.runAsync(
+        `INSERT INTO inventory_movements
+          (id, product_id, delta, reason, reference_type, reference_id, note, synced, applied, created_at)
+         VALUES (?, ?, ?, 'purchase_reversal', 'purchase_items', ?, ?, 0, 1, ?)`,
+        [generateId(), item.product_id, -item.quantity, item.id, item.purchase_id, now]
       );
     }
 
@@ -266,6 +309,7 @@ export async function deletePurchaseItem(itemId: string): Promise<void> {
     await db.execAsync('ROLLBACK');
     throw error;
   }
+  });
 }
 
 /**
@@ -275,11 +319,12 @@ export async function addBudget(
   purchaseId: string,
   additionalBudget: number
 ): Promise<Purchase> {
+  return runSerialized(async () => {
   const db = await getDatabase();
   const now = new Date().toISOString();
 
   const purchase = await db.getFirstAsync<Purchase>(
-    'SELECT * FROM purchases WHERE id = ?',
+    'SELECT * FROM purchases WHERE id = ? AND is_deleted = 0',
     [purchaseId]
   );
 
@@ -300,12 +345,14 @@ export async function addBudget(
     synced: false,
     updated_at: now,
   };
+  });
 }
 
 /**
  * Close a purchase (no more items can be added)
  */
 export async function closePurchase(purchaseId: string): Promise<void> {
+  return runSerialized(async () => {
   const db = await getDatabase();
   const now = new Date().toISOString();
 
@@ -313,12 +360,14 @@ export async function closePurchase(purchaseId: string): Promise<void> {
     "UPDATE purchases SET status = 'closed', synced = 0, updated_at = ? WHERE id = ?",
     [now, purchaseId]
   );
+  });
 }
 
 /**
  * Reopen a closed purchase
  */
 export async function reopenPurchase(purchaseId: string): Promise<void> {
+  return runSerialized(async () => {
   const db = await getDatabase();
   const now = new Date().toISOString();
 
@@ -326,6 +375,7 @@ export async function reopenPurchase(purchaseId: string): Promise<void> {
     "UPDATE purchases SET status = 'open', synced = 0, updated_at = ? WHERE id = ?",
     [now, purchaseId]
   );
+  });
 }
 
 /**
@@ -333,34 +383,61 @@ export async function reopenPurchase(purchaseId: string): Promise<void> {
  * Also reverses inventory changes.
  */
 export async function deletePurchase(purchaseId: string): Promise<void> {
+  return runSerialized(async () => {
   const db = await getDatabase();
   const now = new Date().toISOString();
 
   const items = await db.getAllAsync<PurchaseItem>(
-    'SELECT * FROM purchase_items WHERE purchase_id = ?',
+    'SELECT * FROM purchase_items WHERE purchase_id = ? AND is_deleted = 0',
     [purchaseId]
   );
 
   await db.execAsync('BEGIN TRANSACTION');
 
   try {
+    for (const item of items) {
+      if (!item.product_id) continue;
+      const stock = await db.getFirstAsync<{ quantity: number; name: string }>(
+        'SELECT quantity, name FROM products WHERE id = ?',
+        [item.product_id]
+      );
+      if (!stock) throw new Error('PRODUCT_NOT_FOUND');
+      if (stock.quantity < item.quantity) {
+        throw new Error(`INSUFFICIENT_STOCK_TO_REVERSE:${stock.name}:${stock.quantity}`);
+      }
+    }
+
     // Reverse inventory for each item
     for (const item of items) {
       if (item.product_id) {
         await db.runAsync(
-          'UPDATE products SET quantity = MAX(0, quantity - ?), synced = 0, updated_at = ? WHERE id = ?',
-          [item.quantity, now, item.product_id]
+          'UPDATE products SET quantity = quantity - ? WHERE id = ?',
+          [item.quantity, item.product_id]
+        );
+
+        await db.runAsync(
+          `INSERT INTO inventory_movements
+            (id, product_id, delta, reason, reference_type, reference_id, note, synced, applied, created_at)
+           VALUES (?, ?, ?, 'purchase_reversal', 'purchases', ?, ?, 0, 1, ?)`,
+          [generateId(), item.product_id, -item.quantity, purchaseId, item.id, now]
         );
       }
     }
 
-    // Delete items then purchase
-    await db.runAsync('DELETE FROM purchase_items WHERE purchase_id = ?', [purchaseId]);
-    await db.runAsync('DELETE FROM purchases WHERE id = ?', [purchaseId]);
+    // Soft-delete items then purchase so the deletion syncs.
+    await db.runAsync(
+      'UPDATE purchase_items SET is_deleted = 1, synced = 0 WHERE purchase_id = ?',
+      [purchaseId]
+    );
+    await db.runAsync(
+      "UPDATE purchases SET is_deleted = 1, status = 'closed', synced = 0, updated_at = ? WHERE id = ?",
+      [now, purchaseId]
+    );
 
     await db.execAsync('COMMIT');
   } catch (error) {
     await db.execAsync('ROLLBACK');
     throw error;
   }
+  });
 }

@@ -940,12 +940,21 @@ export default function PurchasesScreen() {
 
                     {/* Profit preview */}
                     {itemCostPrice && itemSellPrice && (
-                      <View style={[styles.profitPreview, { backgroundColor: colors.accentGlow }]}>
-                        <MaterialCommunityIcons name="trending-up" size={16} color={colors.accent} />
-                        <Text style={[styles.profitPreviewText, { color: colors.accent }]}>
-                          الربح: {formatCurrency((parseFloat(itemSellPrice) || 0) - (parseFloat(itemCostPrice) || 0), currency)} / قطعة
-                        </Text>
-                      </View>
+                      (() => {
+                        const profit = (parseFloat(itemSellPrice) || 0) - (parseFloat(itemCostPrice) || 0);
+                        const isLoss = profit < 0;
+                        const label = isLoss ? 'الخسارة' : 'الربح';
+                        const color = isLoss ? colors.danger : colors.accent;
+
+                        return (
+                          <View style={[styles.profitPreview, { backgroundColor: isLoss ? colors.dangerGlow : colors.accentGlow }]}>
+                            <MaterialCommunityIcons name={isLoss ? 'trending-down' : 'trending-up'} size={16} color={color} />
+                            <Text style={[styles.profitPreviewText, { color }]}>
+                              {label}: {formatCurrency(Math.abs(profit), currency)} / قطعة
+                            </Text>
+                          </View>
+                        );
+                      })()
                     )}
 
                     {/* Total Cost Preview */}

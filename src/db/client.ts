@@ -8,6 +8,7 @@ import { DB_NAME, DEFAULT_SERVER_URL } from '../constants/config';
 let db: SQLite.SQLiteDatabase | null = null;
 let dbOpenPromise: Promise<SQLite.SQLiteDatabase> | null = null;
 let initializationPromise: Promise<void> | null = null;
+let serializedQueue: Promise<void> = Promise.resolve();
 
 /**
  * Get or create the database connection
@@ -58,6 +59,7 @@ export async function initializeDatabase(): Promise<void> {
           currency TEXT DEFAULT 'EGP',
           low_stock_threshold INTEGER DEFAULT 5,
           server_url TEXT DEFAULT 'https://smoking-theta.vercel.app',
+          sync_token TEXT DEFAULT '',
           created_at TEXT DEFAULT (datetime('now')),
           updated_at TEXT DEFAULT (datetime('now'))
         );
@@ -82,7 +84,7 @@ export async function initializeDatabase(): Promise<void> {
         CREATE TABLE IF NOT EXISTS categories (
           id TEXT PRIMARY KEY,
           name TEXT NOT NULL,
-          icon TEXT DEFAULT 'folder',
+          icon TEXT DEFAULT '📦',
           color TEXT DEFAULT '#6366f1',
           sort_order INTEGER DEFAULT 0,
           is_active INTEGER DEFAULT 1,
@@ -112,6 +114,7 @@ export async function initializeDatabase(): Promise<void> {
         CREATE TABLE IF NOT EXISTS invoices (
           id TEXT PRIMARY KEY,
           invoice_number INTEGER NOT NULL,
+          invoice_code TEXT,
           invoice_name TEXT,
           invoice_type TEXT DEFAULT 'sale' CHECK(invoice_type IN ('sale', 'merchant')),
           merchant_name TEXT,
@@ -151,6 +154,22 @@ export async function initializeDatabase(): Promise<void> {
           created_at TEXT DEFAULT (datetime('now'))
         );
 
+        -- Inventory movement ledger.
+        -- Product quantity is a materialized balance. Cross-device sync moves
+        -- quantity by applying these immutable deltas once per movement id.
+        CREATE TABLE IF NOT EXISTS inventory_movements (
+          id TEXT PRIMARY KEY,
+          product_id TEXT NOT NULL REFERENCES products(id),
+          delta INTEGER NOT NULL,
+          reason TEXT NOT NULL CHECK(reason IN ('sale', 'purchase', 'purchase_reversal', 'adjustment')),
+          reference_type TEXT NOT NULL,
+          reference_id TEXT NOT NULL,
+          note TEXT,
+          synced INTEGER DEFAULT 0,
+          applied INTEGER DEFAULT 1,
+          created_at TEXT DEFAULT (datetime('now'))
+        );
+
         -- Purchases table (budget-based purchasing)
         CREATE TABLE IF NOT EXISTS purchases (
           id TEXT PRIMARY KEY,
@@ -159,6 +178,7 @@ export async function initializeDatabase(): Promise<void> {
           remaining REAL NOT NULL DEFAULT 0,
           note TEXT,
           status TEXT DEFAULT 'open' CHECK(status IN ('open', 'closed')),
+          is_deleted INTEGER DEFAULT 0,
           synced INTEGER DEFAULT 0,
           created_at TEXT DEFAULT (datetime('now')),
           updated_at TEXT DEFAULT (datetime('now'))
@@ -175,6 +195,7 @@ export async function initializeDatabase(): Promise<void> {
           sell_price REAL NOT NULL DEFAULT 0,
           quantity INTEGER NOT NULL DEFAULT 0,
           total_cost REAL NOT NULL DEFAULT 0,
+          is_deleted INTEGER DEFAULT 0,
           synced INTEGER DEFAULT 0,
           created_at TEXT DEFAULT (datetime('now'))
         );
@@ -189,6 +210,9 @@ export async function initializeDatabase(): Promise<void> {
         CREATE INDEX IF NOT EXISTS idx_purchases_status ON purchases(status);
         CREATE INDEX IF NOT EXISTS idx_purchases_date ON purchases(created_at);
         CREATE INDEX IF NOT EXISTS idx_purchase_items_purchase ON purchase_items(purchase_id);
+        CREATE INDEX IF NOT EXISTS idx_inventory_movements_product ON inventory_movements(product_id);
+        CREATE INDEX IF NOT EXISTS idx_inventory_movements_synced ON inventory_movements(synced);
+        CREATE INDEX IF NOT EXISTS idx_inventory_movements_ref ON inventory_movements(reference_type, reference_id);
 
         -- Insert default settings if not exist
         INSERT OR IGNORE INTO settings (id) VALUES (1);
@@ -212,12 +236,16 @@ export async function initializeDatabase(): Promise<void> {
 async function runMigrations(database: SQLite.SQLiteDatabase): Promise<void> {
   const safeAlters = [
     "ALTER TABLE settings ADD COLUMN server_url TEXT DEFAULT ''",
+    "ALTER TABLE settings ADD COLUMN sync_token TEXT DEFAULT ''",
+    "ALTER TABLE invoices ADD COLUMN invoice_code TEXT",
     "ALTER TABLE invoices ADD COLUMN invoice_name TEXT",
     "ALTER TABLE invoices ADD COLUMN invoice_type TEXT DEFAULT 'sale'",
     "ALTER TABLE invoices ADD COLUMN merchant_name TEXT",
     "ALTER TABLE invoices ADD COLUMN merchant_phone TEXT",
     "ALTER TABLE purchases ADD COLUMN synced INTEGER DEFAULT 0",
+    "ALTER TABLE purchases ADD COLUMN is_deleted INTEGER DEFAULT 0",
     "ALTER TABLE purchase_items ADD COLUMN synced INTEGER DEFAULT 0",
+    "ALTER TABLE purchase_items ADD COLUMN is_deleted INTEGER DEFAULT 0",
   ];
 
   for (const sql of safeAlters) {
@@ -239,6 +267,7 @@ async function runMigrations(database: SQLite.SQLiteDatabase): Promise<void> {
   );
 
   await migrateInvoiceItemsNullableProductId(database);
+  await migrateInvoiceCodes(database);
 }
 
 /**
@@ -300,6 +329,32 @@ async function migrateInvoiceItemsNullableProductId(
 }
 
 /**
+ * Backfill a stable display code for older invoices that only had a local
+ * sequence number. New invoices include a per-install device suffix.
+ */
+async function migrateInvoiceCodes(database: SQLite.SQLiteDatabase): Promise<void> {
+  const row = await database.getFirstAsync<{ value: string }>(
+    "SELECT value FROM meta WHERE key = 'invoice_codes_backfilled'"
+  );
+  if (row?.value === '1') return;
+
+  const invoices = await database.getAllAsync<{ id: string; invoice_number: number }>(
+    "SELECT id, invoice_number FROM invoices WHERE invoice_code IS NULL OR trim(invoice_code) = ''"
+  );
+
+  for (const invoice of invoices) {
+    await database.runAsync(
+      'UPDATE invoices SET invoice_code = ? WHERE id = ?',
+      [`INV-LOCAL-${String(invoice.invoice_number).padStart(6, '0')}`, invoice.id]
+    );
+  }
+
+  await database.runAsync(
+    "INSERT OR REPLACE INTO meta (key, value) VALUES ('invoice_codes_backfilled', '1')"
+  );
+}
+
+/**
  * Read a value from the meta key/value table
  */
 export async function getMeta(key: string): Promise<string | null> {
@@ -337,6 +392,20 @@ export async function closeDatabase(): Promise<void> {
 }
 
 /**
+ * Serialize critical write/sync workflows that share the same SQLite
+ * connection. This prevents background sync from observing a half-finished
+ * sale/purchase transaction.
+ */
+export async function runSerialized<T>(operation: () => Promise<T>): Promise<T> {
+  const run = serializedQueue.then(operation, operation);
+  serializedQueue = run.then(
+    () => undefined,
+    () => undefined
+  );
+  return run;
+}
+
+/**
  * Generate a UUID v4
  */
 export function generateId(): string {
@@ -345,4 +414,16 @@ export function generateId(): string {
     const v = c === 'x' ? r : (r & 0x3) | 0x8;
     return v.toString(16);
   });
+}
+
+/**
+ * Stable per-install device id used by sync and human-safe invoice codes.
+ */
+export async function getOrCreateDeviceId(): Promise<string> {
+  let id = await getMeta('device_id');
+  if (!id) {
+    id = generateId();
+    await setMeta('device_id', id);
+  }
+  return id;
 }

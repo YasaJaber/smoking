@@ -23,7 +23,6 @@ import { useSettingsStore } from '../../../src/stores/settingsStore';
 import { useAuthStore } from '../../../src/stores/authStore';
 import { useSyncStore } from '../../../src/stores/syncStore';
 import { CurrentDateBadge } from '../../../src/components/common/CurrentDateBadge';
-import { getDatabase } from '../../../src/db/client';
 import { formatDateTime } from '../../../src/utils/formatters';
 import { DEFAULT_SERVER_URL } from '../../../src/constants/config';
 import { Colors, Gradients, Typography, Spacing, BorderRadius } from '../../../src/constants/theme';
@@ -94,24 +93,40 @@ export default function SettingsScreen() {
   const [footerMsg, setFooterMsg] = useState(settings.footer_message);
   const [lowStock, setLowStock] = useState(settings.low_stock_threshold.toString());
   const [serverUrl, setServerUrl] = useState(settings.server_url);
+  const [syncToken, setSyncToken] = useState(settings.sync_token || '');
   const [currentPin, setCurrentPin] = useState('');
   const [newPin, setNewPin] = useState('');
   const [confirmPin, setConfirmPin] = useState('');
   const [isChangingPin, setIsChangingPin] = useState(false);
 
   const handleSave = async () => {
-    await updateSettings({
-      store_name: storeName,
-      phone,
-      tax_rate: (parseFloat(taxRate) || 0) / 100,
-      welcome_message: welcomeMsg,
-      footer_message: footerMsg,
-      low_stock_threshold: parseInt(lowStock) || 5,
-      server_url: serverUrl.trim(),
-    });
-    await refreshSyncStatus();
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    Alert.alert('✅', 'تم حفظ الإعدادات بنجاح');
+    try {
+      await updateSettings({
+        store_name: storeName,
+        phone,
+        tax_rate: (parseFloat(taxRate) || 0) / 100,
+        welcome_message: welcomeMsg,
+        footer_message: footerMsg,
+        low_stock_threshold: parseInt(lowStock) || 5,
+        server_url: serverUrl.trim(),
+        sync_token: syncToken.trim(),
+      });
+      await refreshSyncStatus();
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      Alert.alert('✅', 'تم حفظ الإعدادات بنجاح');
+    } catch (error) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      Alert.alert('تعذر الحفظ', 'لم يتم حفظ الإعدادات. راجع المساحة/قاعدة البيانات وحاول مرة أخرى.');
+    }
+  };
+
+  const handleQuickSetting = async (updates: Parameters<typeof updateSettings>[0]) => {
+    try {
+      await updateSettings(updates);
+    } catch {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      Alert.alert('تعذر الحفظ', 'لم يتم حفظ التغيير. حاول مرة أخرى.');
+    }
   };
 
   const handleSyncNow = async () => {
@@ -170,24 +185,8 @@ export default function SettingsScreen() {
 
   const handleResetDB = () => {
     Alert.alert(
-      '⚠️ تحذير',
-      'هل تريد مسح جميع البيانات وإعادة ضبط النظام؟ هذا الإجراء لا يمكن التراجع عنه!',
-      [
-        { text: 'إلغاء', style: 'cancel' },
-        {
-          text: 'مسح الكل',
-          style: 'destructive',
-          onPress: async () => {
-            const db = await getDatabase();
-            await db.execAsync(`
-              DELETE FROM invoice_items;
-              DELETE FROM invoices;
-              DELETE FROM sync_log;
-            `);
-            Alert.alert('✅', 'تم مسح بيانات المبيعات');
-          },
-        },
-      ]
+      'غير متاح في نسخة التشغيل',
+      'حذف الفواتير محليًا فقط ممكن يسبب اختلاف مع السحابة وتقارير مالية غير صحيحة. استخدم مرتجع/تسوية بدل حذف سجلات البيع.'
     );
   };
 
@@ -241,7 +240,7 @@ export default function SettingsScreen() {
               <SettingRow label="تفعيل الضريبة" colors={colors}>
                 <Switch
                   value={settings.tax_enabled}
-                  onValueChange={(v) => updateSettings({ tax_enabled: v })}
+                  onValueChange={(v) => handleQuickSetting({ tax_enabled: v })}
                   trackColor={{ false: colors.surfaceLight, true: colors.primaryGlow }}
                   thumbColor={settings.tax_enabled ? colors.primary : colors.textMuted}
                 />
@@ -263,7 +262,7 @@ export default function SettingsScreen() {
               <SettingRow label="الوضع الداكن" colors={colors}>
                 <Switch
                   value={settings.dark_mode}
-                  onValueChange={(v) => updateSettings({ dark_mode: v })}
+                  onValueChange={(v) => handleQuickSetting({ dark_mode: v })}
                   trackColor={{ false: colors.surfaceLight, true: colors.primaryGlow }}
                   thumbColor={settings.dark_mode ? colors.primary : colors.textMuted}
                 />
@@ -371,6 +370,19 @@ export default function SettingsScreen() {
                   placeholderTextColor={colors.textMuted}
                   autoCapitalize="none"
                   keyboardType="url"
+                />
+
+                <Text style={[styles.settingLabel, { color: colors.textSecondary, marginBottom: Spacing.xs, marginTop: Spacing.md }]}>
+                  توكن المزامنة
+                </Text>
+                <TextInput
+                  style={[styles.input, { backgroundColor: colors.surfaceLight, borderColor: colors.border, color: colors.text, textAlign: 'left' }]}
+                  value={syncToken}
+                  onChangeText={setSyncToken}
+                  placeholder="SYNC_TOKEN"
+                  placeholderTextColor={colors.textMuted}
+                  autoCapitalize="none"
+                  secureTextEntry
                 />
 
                 <View style={[styles.syncStatusRow, { borderTopColor: colors.border }]}>

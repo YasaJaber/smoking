@@ -3,7 +3,7 @@
 // ============================================================
 
 import type { Invoice, InvoiceItem, Settings } from '../types';
-import { formatCurrency, formatDateTime, generateInvoiceNumber } from './formatters';
+import { formatCurrency, formatDateTime, formatInvoiceCode } from './formatters';
 
 interface ReceiptData {
   invoice: Invoice;
@@ -169,7 +169,7 @@ export function buildReceiptHtml({ invoice, items, settings, cashierName }: Rece
     ${invoiceNameLine}
     ${merchantNameLine}
     ${merchantPhoneLine}
-    <div class="row"><span>رقم الفاتورة</span><span>${generateInvoiceNumber(invoice.invoice_number)}</span></div>
+    <div class="row"><span>رقم الفاتورة</span><span>${formatInvoiceCode(invoice.invoice_number, invoice.invoice_code)}</span></div>
     <div class="row"><span>التاريخ</span><span>${formatDateTime(invoice.created_at)}</span></div>
     ${cashierName ? `<div class="row"><span>الكاشير</span><span>${escapeHtml(cashierName)}</span></div>` : ''}
     <div class="row"><span>الحالة</span><span class="status ${invoice.status}">${statusLabel}</span></div>

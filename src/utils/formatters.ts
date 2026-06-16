@@ -6,7 +6,7 @@
  * Format a number as currency
  */
 export function formatCurrency(amount: number, currency: string = 'EGP'): string {
-  return `${amount.toFixed(2)} ${currency}`;
+  return amount.toFixed(2);
 }
 
 /**
@@ -86,4 +86,8 @@ export function getRelativeTime(dateStr: string): string {
  */
 export function generateInvoiceNumber(sequence: number): string {
   return `INV-${String(sequence).padStart(6, '0')}`;
+}
+
+export function formatInvoiceCode(sequence: number, invoiceCode?: string | null): string {
+  return invoiceCode?.trim() || generateInvoiceNumber(sequence);
 }

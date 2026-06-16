@@ -33,29 +33,40 @@ export function QuickCustomItemModal({ visible, onClose }: QuickCustomItemModalP
   const addCustomItem = useCartStore((s) => s.addCustomItem);
 
   const [name, setName] = useState('');
-  const [price, setPrice] = useState('');
+  const [costPrice, setCostPrice] = useState('');
+  const [sellPrice, setSellPrice] = useState('');
   const [quantity, setQuantity] = useState('1');
   const [error, setError] = useState('');
 
   useEffect(() => {
     if (!visible) return;
     setName('');
-    setPrice('');
+    setCostPrice('');
+    setSellPrice('');
     setQuantity('1');
     setError('');
   }, [visible]);
 
   const handleAdd = () => {
     const trimmedName = name.trim();
-    const sellPrice = parseFloat(price);
+    const cost = parseFloat(costPrice);
+    const sell = parseFloat(sellPrice);
     const qty = parseInt(quantity, 10);
 
     if (!trimmedName) {
       setError('اكتب اسم الصنف');
       return;
     }
-    if (!sellPrice || sellPrice <= 0) {
-      setError('اكتب سعر صحيح');
+    if (!cost || cost <= 0) {
+      setError('اكتب سعر شراء صحيح');
+      return;
+    }
+    if (!sell || sell <= 0) {
+      setError('اكتب سعر بيع صحيح');
+      return;
+    }
+    if (sell < cost) {
+      setError('سعر البيع لازم يكون أكبر من أو يساوي سعر الشراء');
       return;
     }
     if (!qty || qty <= 0) {
@@ -63,10 +74,15 @@ export function QuickCustomItemModal({ visible, onClose }: QuickCustomItemModalP
       return;
     }
 
-    addCustomItem(trimmedName, sellPrice, qty);
+    addCustomItem(trimmedName, cost, sell, qty);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     onClose();
   };
+
+  const parsedCost = parseFloat(costPrice) || 0;
+  const parsedSell = parseFloat(sellPrice) || 0;
+  const parsedQty = parseInt(quantity, 10) || 0;
+  const profit = Math.max(0, (parsedSell - parsedCost) * parsedQty);
 
   return (
     <Modal
@@ -120,15 +136,15 @@ export function QuickCustomItemModal({ visible, onClose }: QuickCustomItemModalP
 
           <View style={styles.row}>
             <View style={[styles.inputGroup, styles.half]}>
-              <Text style={[styles.label, { color: colors.textSecondary }]}>السعر</Text>
+              <Text style={[styles.label, { color: colors.textSecondary }]}>الشراء بكام</Text>
               <TextInput
                 style={[
                   styles.input,
                   { backgroundColor: colors.surfaceLight, borderColor: colors.border, color: colors.text },
                 ]}
-                value={price}
+                value={costPrice}
                 onChangeText={(value) => {
-                  setPrice(value);
+                  setCostPrice(value);
                   setError('');
                 }}
                 keyboardType="decimal-pad"
@@ -137,6 +153,26 @@ export function QuickCustomItemModal({ visible, onClose }: QuickCustomItemModalP
               />
             </View>
 
+            <View style={[styles.inputGroup, styles.half]}>
+              <Text style={[styles.label, { color: colors.textSecondary }]}>هتبيعه بكام</Text>
+              <TextInput
+                style={[
+                  styles.input,
+                  { backgroundColor: colors.surfaceLight, borderColor: colors.border, color: colors.text },
+                ]}
+                value={sellPrice}
+                onChangeText={(value) => {
+                  setSellPrice(value);
+                  setError('');
+                }}
+                keyboardType="decimal-pad"
+                placeholder="0.00"
+                placeholderTextColor={colors.textMuted}
+              />
+            </View>
+          </View>
+
+          <View style={styles.row}>
             <View style={[styles.inputGroup, styles.half]}>
               <Text style={[styles.label, { color: colors.textSecondary }]}>الكمية</Text>
               <TextInput
@@ -154,6 +190,13 @@ export function QuickCustomItemModal({ visible, onClose }: QuickCustomItemModalP
                 placeholderTextColor={colors.textMuted}
                 selectTextOnFocus
               />
+            </View>
+
+            <View style={[styles.profitBox, { backgroundColor: colors.accentGlow, borderColor: colors.accent }]}>
+              <Text style={[styles.profitLabel, { color: colors.accent }]}>المكسب</Text>
+              <Text style={[styles.profitValue, { color: colors.accent }]}>
+                {profit.toFixed(2)}
+              </Text>
             </View>
           </View>
 
@@ -229,6 +272,25 @@ const styles = StyleSheet.create({
   },
   half: {
     flex: 1,
+  },
+  profitBox: {
+    flex: 1,
+    borderWidth: 1,
+    borderRadius: BorderRadius.lg,
+    paddingHorizontal: Spacing.base,
+    paddingVertical: Spacing.sm,
+    justifyContent: 'center',
+    marginBottom: Spacing.base,
+    minHeight: 70,
+  },
+  profitLabel: {
+    fontSize: Typography.fontSize.sm,
+    fontWeight: '600',
+    marginBottom: 2,
+  },
+  profitValue: {
+    fontSize: Typography.fontSize.lg,
+    fontWeight: '800',
   },
   errorText: {
     fontSize: Typography.fontSize.sm,
