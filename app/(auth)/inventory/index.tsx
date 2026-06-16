@@ -18,7 +18,7 @@ import {
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
-import Animated, { FadeInDown, FadeIn, SlideInDown } from 'react-native-reanimated';
+import Animated, { SlideInDown } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router, useFocusEffect } from 'expo-router';
 import { CurrentDateBadge } from '../../../src/components/common/CurrentDateBadge';
@@ -51,6 +51,7 @@ export default function InventoryScreen() {
   const darkMode = useSettingsStore((s) => s.settings.dark_mode);
   const colors = darkMode ? Colors.dark : Colors.light;
   const currency = useSettingsStore((s) => s.settings.currency);
+  const lowStockThreshold = useSettingsStore((s) => s.settings.low_stock_threshold);
 
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -108,6 +109,7 @@ export default function InventoryScreen() {
   const filteredProducts = searchQuery
     ? products.filter((p) => p.name.includes(searchQuery))
     : products;
+  const lowStockProducts = filteredProducts.filter((p) => p.quantity <= lowStockThreshold);
 
   // === Product Modal ===
   const openAddProduct = () => {
@@ -218,20 +220,12 @@ export default function InventoryScreen() {
     return getCategory(catId)?.name || '';
   };
 
-  const renderProduct = ({ item, index }: { item: Product; index: number }) => {
+  const renderProduct = ({ item }: { item: Product }) => {
     const isLowStock = item.quantity <= item.min_quantity;
     const category = getCategory(item.category_id);
-    const profit = item.sell_price - item.cost_price;
-    const profitPercent = item.cost_price > 0 ? (profit / item.cost_price) * 100 : 0;
-    const isLoss = profit < 0;
-    const profitLabel =
-      profit === 0
-        ? '0%'
-        : `${isLoss ? 'خسارة' : 'ربح'} ${isLoss ? '-' : '+'}${Math.abs(profitPercent).toFixed(0)}%`;
 
     return (
-      <Animated.View entering={FadeInDown.duration(250).delay(index * 40)}>
-        <Pressable
+      <Pressable
           onPress={() => openEditProduct(item)}
           onLongPress={() => handleDeleteProduct(item)}
           style={[styles.productRow, { backgroundColor: colors.surface, borderColor: colors.border }]}
@@ -257,9 +251,6 @@ export default function InventoryScreen() {
           </View>
 
           <View style={styles.productMeta}>
-            <Text style={[styles.profitText, { color: isLoss ? colors.danger : colors.accent }]}>
-              {profitLabel}
-            </Text>
             <View style={[
               styles.stockChip,
               { backgroundColor: isLowStock ? colors.dangerGlow : colors.accentGlow }
@@ -269,8 +260,7 @@ export default function InventoryScreen() {
               </Text>
             </View>
           </View>
-        </Pressable>
-      </Animated.View>
+      </Pressable>
     );
   };
 
@@ -378,6 +368,38 @@ export default function InventoryScreen() {
           <View style={styles.emptyState}>
             <MaterialCommunityIcons name="package-variant" size={48} color={colors.textMuted} />
             <Text style={[styles.emptyText, { color: colors.textMuted }]}>لا توجد منتجات</Text>
+          </View>
+        }
+        ListFooterComponent={
+          <View style={[styles.lowStockSection, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <View style={styles.lowStockHeader}>
+              <View>
+                <Text style={[styles.lowStockTitle, { color: colors.text }]}>المخزون المنخفض</Text>
+                <Text style={[styles.lowStockSubtitle, { color: colors.textMuted }]}>
+                  المنتجات التي كميتها أقل من أو تساوي {lowStockThreshold}
+                </Text>
+              </View>
+              <View style={[styles.lowStockCountChip, { backgroundColor: colors.surfaceLight }]}>
+                <Text style={[styles.lowStockCountText, { color: colors.warning }]}>
+                  {lowStockProducts.length}
+                </Text>
+              </View>
+            </View>
+
+            {lowStockProducts.length > 0 ? (
+              lowStockProducts.map((item, index) => (
+                <View key={`low-stock-${item.id}`} style={index > 0 ? styles.lowStockItemSpacing : undefined}>
+                  {renderProduct({ item })}
+                </View>
+              ))
+            ) : (
+              <View style={[styles.lowStockEmptyState, { backgroundColor: colors.surfaceLight }]}>
+                <MaterialCommunityIcons name="check-circle-outline" size={20} color={colors.accent} />
+                <Text style={[styles.lowStockEmptyText, { color: colors.textMuted }]}>
+                  لا توجد منتجات ضمن المخزون المنخفض الآن
+                </Text>
+              </View>
+            )}
           </View>
         }
       />
@@ -693,6 +715,55 @@ const styles = StyleSheet.create({
   },
   catChipText: { fontSize: Typography.fontSize.xs, fontWeight: '600' },
   list: { padding: Spacing.base, gap: Spacing.sm },
+  lowStockSection: {
+    marginTop: Spacing.lg,
+    borderWidth: 1,
+    borderRadius: BorderRadius.xl,
+    padding: Spacing.md,
+  },
+  lowStockHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: Spacing.md,
+    marginBottom: Spacing.md,
+  },
+  lowStockTitle: {
+    fontSize: Typography.fontSize.base,
+    fontWeight: '700',
+  },
+  lowStockSubtitle: {
+    fontSize: Typography.fontSize.xs,
+    marginTop: 2,
+  },
+  lowStockCountChip: {
+    minWidth: 34,
+    height: 34,
+    borderRadius: BorderRadius.full,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: Spacing.sm,
+  },
+  lowStockCountText: {
+    fontSize: Typography.fontSize.sm,
+    fontWeight: '700',
+  },
+  lowStockItemSpacing: {
+    marginTop: Spacing.xs,
+  },
+  lowStockEmptyState: {
+    borderRadius: BorderRadius.lg,
+    paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.base,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.sm,
+  },
+  lowStockEmptyText: {
+    fontSize: Typography.fontSize.sm,
+    fontWeight: '500',
+  },
   productRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -721,7 +792,6 @@ const styles = StyleSheet.create({
   sellPrice: { fontSize: Typography.fontSize.sm, fontWeight: '700' },
   costPrice: { fontSize: Typography.fontSize.xs, marginTop: 2 },
   productMeta: { alignItems: 'center', gap: Spacing.xs },
-  profitText: { fontSize: Typography.fontSize.xs, fontWeight: '700' },
   stockChip: {
     paddingHorizontal: Spacing.sm,
     paddingVertical: 2,
