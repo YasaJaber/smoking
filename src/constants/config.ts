@@ -26,4 +26,6 @@ export const DB_NAME = 'smoking_pos.db';
 export const DEFAULT_SERVER_URL =
   process.env.EXPO_PUBLIC_SYNC_SERVER_URL || 'https://smoking-theta.vercel.app';
 
-export const DEFAULT_SYNC_TOKEN = process.env.EXPO_PUBLIC_SYNC_TOKEN || '';
+export const DEFAULT_SYNC_TOKEN =
+  process.env.EXPO_PUBLIC_SYNC_TOKEN ||
+  '1e3eaecdb3b561bc86760dc9fd4f4ed7c0e95fd022aeb21149098998d0768e3a';
