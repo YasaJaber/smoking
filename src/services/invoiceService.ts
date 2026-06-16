@@ -4,6 +4,7 @@
 
 import { getDatabase, generateId, getOrCreateDeviceId, runSerialized } from '../db/client';
 import { getLocalDateKey, getLocalDayBounds } from '../utils/dates';
+import { logAuditEvent } from './auditService';
 import type { Invoice, InvoiceItem, CartItem } from '../types';
 import type { SQLiteDatabase } from 'expo-sqlite';
 
@@ -21,6 +22,25 @@ export interface InvoiceDaySummary {
   total: number;
   amountPaid: number;
   amountDue: number;
+}
+
+export interface PartialDebtSummary {
+  count: number;
+  totalDue: number;
+  oldestDate: string | null;
+}
+
+export interface UpdateInvoiceLineInput {
+  id: string;
+  quantity: number;
+  unitPrice: number;
+}
+
+export interface UpdateInvoiceInput {
+  invoiceName?: string | null;
+  merchantName?: string | null;
+  merchantPhone?: string | null;
+  items: UpdateInvoiceLineInput[];
 }
 
 /**
@@ -202,6 +222,9 @@ export async function createInvoice(
       payment_method: 'cash',
       status: status as any,
       synced: false,
+      refund_amount: 0,
+      refunded_at: null,
+      refund_note: null,
       created_at: now,
     };
   } catch (error) {
@@ -216,7 +239,8 @@ export async function createInvoice(
  */
 export async function payInvoiceBalance(
   invoiceId: string,
-  additionalPayment: number
+  additionalPayment: number,
+  userId?: string | null
 ): Promise<void> {
   return runSerialized(async () => {
   const db = await getDatabase();
@@ -235,6 +259,25 @@ export async function payInvoiceBalance(
     'UPDATE invoices SET amount_paid = ?, amount_due = ?, status = ?, synced = 0 WHERE id = ?',
     [newAmountPaid, newAmountDue, newStatus, invoiceId]
   );
+
+  await logAuditEvent({
+    userId,
+    action: 'update',
+    entityType: 'invoice',
+    entityId: invoiceId,
+    entityLabel: invoice.invoice_code ?? String(invoice.invoice_number),
+    before: {
+      amount_paid: invoice.amount_paid,
+      amount_due: invoice.amount_due,
+      status: invoice.status,
+    },
+    after: {
+      amount_paid: newAmountPaid,
+      amount_due: newAmountDue,
+      status: newStatus,
+    },
+    note: 'partial_invoice_payment',
+  }).catch(() => undefined);
   });
 }
 
@@ -246,6 +289,20 @@ export async function getPartialInvoices(): Promise<Invoice[]> {
   return db.getAllAsync<Invoice>(
     "SELECT * FROM invoices WHERE status = 'partial' ORDER BY created_at DESC"
   );
+}
+
+export async function getPartialDebtSummary(): Promise<PartialDebtSummary> {
+  const db = await getDatabase();
+  const result = await db.getFirstAsync<PartialDebtSummary>(
+    `SELECT
+      COUNT(*) as count,
+      COALESCE(SUM(amount_due), 0) as totalDue,
+      MIN(created_at) as oldestDate
+     FROM invoices
+     WHERE status = 'partial'`
+  );
+
+  return result || { count: 0, totalDue: 0, oldestDate: null };
 }
 
 /**
@@ -272,12 +329,289 @@ export async function getInvoiceWithItems(
 }
 
 /**
+ * Edit invoice lines and rebalance stock by the quantity difference.
+ * Lines with quantity = 0 are kept as zero-value rows so remote sync can
+ * overwrite older copies instead of losing a local deletion.
+ */
+export async function updateInvoice(
+  invoiceId: string,
+  input: UpdateInvoiceInput,
+  userId?: string | null
+): Promise<Invoice> {
+  return runSerialized(async () => {
+  const db = await getDatabase();
+  const now = new Date().toISOString();
+  const invoice = await db.getFirstAsync<Invoice>(
+    'SELECT * FROM invoices WHERE id = ?',
+    [invoiceId]
+  );
+
+  if (!invoice) throw new Error('INVOICE_NOT_FOUND');
+  if (invoice.status === 'refunded') throw new Error('INVOICE_REFUNDED');
+
+  const existingItems = await db.getAllAsync<InvoiceItem>(
+    'SELECT * FROM invoice_items WHERE invoice_id = ?',
+    [invoiceId]
+  );
+  const existingById = new Map(existingItems.map((item) => [item.id, item]));
+  const nextById = new Map<string, UpdateInvoiceLineInput>();
+
+  for (const raw of input.items) {
+    const existing = existingById.get(raw.id);
+    if (!existing) throw new Error('INVOICE_ITEM_NOT_FOUND');
+
+    const quantity = Math.max(0, Math.floor(Number(raw.quantity) || 0));
+    const unitPrice = Math.max(0, Number(raw.unitPrice) || 0);
+    nextById.set(raw.id, { id: raw.id, quantity, unitPrice });
+  }
+
+  for (const item of existingItems) {
+    if (!nextById.has(item.id)) {
+      nextById.set(item.id, {
+        id: item.id,
+        quantity: item.quantity,
+        unitPrice: item.unit_price,
+      });
+    }
+  }
+
+  const nextLines = Array.from(nextById.values());
+  if (nextLines.every((line) => line.quantity <= 0)) {
+    throw new Error('INVOICE_EMPTY');
+  }
+
+  await db.execAsync('BEGIN TRANSACTION');
+
+  try {
+    let subtotal = 0;
+
+    for (const line of nextLines) {
+      const existing = existingById.get(line.id)!;
+      const lineTotal = line.quantity * line.unitPrice;
+      subtotal += lineTotal;
+
+      if (existing.product_id && existing.quantity !== line.quantity) {
+        const stockDelta = existing.quantity - line.quantity;
+
+        if (stockDelta < 0) {
+          const needed = Math.abs(stockDelta);
+          const stock = await db.getFirstAsync<{ quantity: number; name: string }>(
+            'SELECT quantity, name FROM products WHERE id = ?',
+            [existing.product_id]
+          );
+
+          if (!stock) {
+            throw new Error(`PRODUCT_NOT_FOUND:${existing.product_name}`);
+          }
+
+          if (stock.quantity < needed) {
+            throw new Error(`INSUFFICIENT_STOCK:${stock.name}:${stock.quantity}`);
+          }
+        }
+
+        const result = await db.runAsync(
+          'UPDATE products SET quantity = quantity + ? WHERE id = ?',
+          [stockDelta, existing.product_id]
+        );
+
+        if (result.changes !== 1) {
+          throw new Error(`PRODUCT_NOT_FOUND:${existing.product_name}`);
+        }
+
+        await db.runAsync(
+          `INSERT INTO inventory_movements
+            (id, product_id, delta, reason, reference_type, reference_id, note, synced, applied, created_at)
+           VALUES (?, ?, ?, 'sale', 'invoice_items', ?, ?, 0, 1, ?)`,
+          [
+            generateId(),
+            existing.product_id,
+            stockDelta,
+            existing.id,
+            `invoice_edit:${invoiceId}`,
+            now,
+          ]
+        );
+      }
+
+      await db.runAsync(
+        'UPDATE invoice_items SET quantity = ?, unit_price = ?, total = ? WHERE id = ?',
+        [line.quantity, line.unitPrice, lineTotal, line.id]
+      );
+    }
+
+    const taxRate = invoice.subtotal > 0 ? invoice.tax_amount / invoice.subtotal : 0;
+    const taxAmount = subtotal * taxRate;
+    const total = subtotal + taxAmount;
+    const amountPaid = Math.min(invoice.amount_paid || 0, total);
+    const amountDue = Math.max(0, total - amountPaid);
+    const status = amountDue > 0 ? 'partial' : 'completed';
+    const invoiceName = input.invoiceName?.trim() || null;
+    const merchantName = input.merchantName?.trim() || null;
+    const merchantPhone = input.merchantPhone?.trim() || null;
+
+    await db.runAsync(
+      `UPDATE invoices
+       SET invoice_name = ?, merchant_name = ?, merchant_phone = ?,
+           subtotal = ?, tax_amount = ?, total = ?,
+           amount_paid = ?, amount_due = ?, status = ?, synced = 0
+       WHERE id = ?`,
+      [
+        invoiceName,
+        merchantName,
+        merchantPhone,
+        subtotal,
+        taxAmount,
+        total,
+        amountPaid,
+        amountDue,
+        status,
+        invoiceId,
+      ]
+    );
+
+    await db.runAsync(
+      "INSERT INTO sync_log (table_name, record_id, action, synced, created_at) VALUES ('invoices', ?, 'update', 0, ?)",
+      [invoiceId, now]
+    );
+
+    await db.execAsync('COMMIT');
+
+    const updatedInvoice = {
+      ...invoice,
+      invoice_name: invoiceName,
+      merchant_name: merchantName,
+      merchant_phone: merchantPhone,
+      subtotal,
+      tax_amount: taxAmount,
+      total,
+      amount_paid: amountPaid,
+      amount_due: amountDue,
+      status: status as Invoice['status'],
+      synced: false,
+    };
+
+    await logAuditEvent({
+      userId,
+      action: 'update',
+      entityType: 'invoice',
+      entityId: invoiceId,
+      entityLabel: invoice.invoice_code ?? String(invoice.invoice_number),
+      before: { invoice, items: existingItems },
+      after: { invoice: updatedInvoice, items: nextLines },
+      note: 'invoice_edit',
+    }).catch(() => undefined);
+
+    return updatedInvoice;
+  } catch (error) {
+    await db.execAsync('ROLLBACK');
+    throw error;
+  }
+  });
+}
+
+/**
+ * Cancel an invoice, restore its sold stock, and hide it from normal reports.
+ */
+export async function refundInvoice(
+  invoiceId: string,
+  userId?: string | null,
+  note?: string
+): Promise<void> {
+  return runSerialized(async () => {
+  const db = await getDatabase();
+  const now = new Date().toISOString();
+  const invoice = await db.getFirstAsync<Invoice>(
+    'SELECT * FROM invoices WHERE id = ?',
+    [invoiceId]
+  );
+
+  if (!invoice) throw new Error('INVOICE_NOT_FOUND');
+  if (invoice.status === 'refunded') return;
+
+  const items = await db.getAllAsync<InvoiceItem>(
+    'SELECT * FROM invoice_items WHERE invoice_id = ?',
+    [invoiceId]
+  );
+
+  await db.execAsync('BEGIN TRANSACTION');
+
+  try {
+    for (const item of items) {
+      if (!item.product_id || item.quantity <= 0) continue;
+
+      const result = await db.runAsync(
+        'UPDATE products SET quantity = quantity + ? WHERE id = ?',
+        [item.quantity, item.product_id]
+      );
+
+      if (result.changes !== 1) {
+        throw new Error(`PRODUCT_NOT_FOUND:${item.product_name}`);
+      }
+
+      await db.runAsync(
+        `INSERT INTO inventory_movements
+          (id, product_id, delta, reason, reference_type, reference_id, note, synced, applied, created_at)
+         VALUES (?, ?, ?, 'sale', 'invoice_items', ?, ?, 0, 1, ?)`,
+        [
+          generateId(),
+          item.product_id,
+          item.quantity,
+          item.id,
+          `invoice_refund:${invoiceId}`,
+          now,
+        ]
+      );
+    }
+
+    await db.runAsync(
+      `UPDATE invoices
+       SET amount_paid = 0,
+           amount_due = 0,
+           status = 'refunded',
+           refund_amount = ?,
+           refunded_at = ?,
+           refund_note = ?,
+           synced = 0
+       WHERE id = ?`,
+      [invoice.total, now, note?.trim() || null, invoiceId]
+    );
+
+    await db.runAsync(
+      "INSERT INTO sync_log (table_name, record_id, action, synced, created_at) VALUES ('invoices', ?, 'update', 0, ?)",
+      [invoiceId, now]
+    );
+
+    await db.execAsync('COMMIT');
+
+    await logAuditEvent({
+      userId,
+      action: 'refund',
+      entityType: 'invoice',
+      entityId: invoiceId,
+      entityLabel: invoice.invoice_code ?? String(invoice.invoice_number),
+      before: { invoice, items },
+      after: {
+        status: 'refunded',
+        refund_amount: invoice.total,
+        refunded_at: now,
+        refund_note: note?.trim() || null,
+      },
+      note: note?.trim() || 'full_invoice_refund',
+    }).catch(() => undefined);
+  } catch (error) {
+    await db.execAsync('ROLLBACK');
+    throw error;
+  }
+  });
+}
+
+/**
  * Get recent invoices
  */
 export async function getRecentInvoices(limit: number = 20): Promise<Invoice[]> {
   const db = await getDatabase();
   return db.getAllAsync<Invoice>(
-    'SELECT * FROM invoices ORDER BY created_at DESC LIMIT ?',
+    "SELECT * FROM invoices WHERE status != 'refunded' ORDER BY created_at DESC LIMIT ?",
     [limit]
   );
 }
@@ -290,7 +624,7 @@ export async function getInvoicesByDate(dateKey: string): Promise<Invoice[]> {
   const [start, end] = getLocalDayBounds(dateKey);
 
   return db.getAllAsync<Invoice>(
-    'SELECT * FROM invoices WHERE created_at >= ? AND created_at < ? ORDER BY created_at DESC',
+    "SELECT * FROM invoices WHERE status != 'refunded' AND created_at >= ? AND created_at < ? ORDER BY created_at DESC",
     [start, end]
   );
 }

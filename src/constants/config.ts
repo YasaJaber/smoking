@@ -23,4 +23,7 @@ export const STORAGE_KEYS = {
 
 export const DB_NAME = 'smoking_pos.db';
 
-export const DEFAULT_SERVER_URL = 'https://smoking-theta.vercel.app';
+export const DEFAULT_SERVER_URL =
+  process.env.EXPO_PUBLIC_SYNC_SERVER_URL || 'https://smoking-theta.vercel.app';
+
+export const DEFAULT_SYNC_TOKEN = process.env.EXPO_PUBLIC_SYNC_TOKEN || '';

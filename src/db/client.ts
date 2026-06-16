@@ -3,7 +3,7 @@
 // ============================================================
 
 import * as SQLite from 'expo-sqlite';
-import { DB_NAME, DEFAULT_SERVER_URL } from '../constants/config';
+import { DB_NAME, DEFAULT_SERVER_URL, DEFAULT_SYNC_TOKEN } from '../constants/config';
 
 let db: SQLite.SQLiteDatabase | null = null;
 let dbOpenPromise: Promise<SQLite.SQLiteDatabase> | null = null;
@@ -127,6 +127,9 @@ export async function initializeDatabase(): Promise<void> {
           amount_due REAL NOT NULL DEFAULT 0,
           payment_method TEXT DEFAULT 'cash',
           status TEXT DEFAULT 'completed' CHECK(status IN ('completed', 'partial', 'refunded')),
+          refund_amount REAL NOT NULL DEFAULT 0,
+          refunded_at TEXT,
+          refund_note TEXT,
           synced INTEGER DEFAULT 0,
           created_at TEXT DEFAULT (datetime('now'))
         );
@@ -152,6 +155,39 @@ export async function initializeDatabase(): Promise<void> {
           action TEXT NOT NULL CHECK(action IN ('create', 'update', 'delete')),
           synced INTEGER DEFAULT 0,
           created_at TEXT DEFAULT (datetime('now'))
+        );
+
+        -- Audit trail for sensitive edits/deletes/refunds/stock changes
+        CREATE TABLE IF NOT EXISTS audit_events (
+          id TEXT PRIMARY KEY,
+          user_id TEXT,
+          action TEXT NOT NULL,
+          entity_type TEXT NOT NULL,
+          entity_id TEXT NOT NULL,
+          entity_label TEXT,
+          before_json TEXT,
+          after_json TEXT,
+          note TEXT,
+          created_at TEXT DEFAULT (datetime('now'))
+        );
+
+        -- Daily close snapshots
+        CREATE TABLE IF NOT EXISTS daily_closes (
+          id TEXT PRIMARY KEY,
+          date_key TEXT NOT NULL UNIQUE,
+          user_id TEXT,
+          gross_sales REAL NOT NULL DEFAULT 0,
+          net_sales REAL NOT NULL DEFAULT 0,
+          cash_collected REAL NOT NULL DEFAULT 0,
+          outstanding_due REAL NOT NULL DEFAULT 0,
+          refunds_total REAL NOT NULL DEFAULT 0,
+          profit REAL NOT NULL DEFAULT 0,
+          invoice_count INTEGER NOT NULL DEFAULT 0,
+          partial_count INTEGER NOT NULL DEFAULT 0,
+          items_sold INTEGER NOT NULL DEFAULT 0,
+          note TEXT,
+          created_at TEXT DEFAULT (datetime('now')),
+          updated_at TEXT DEFAULT (datetime('now'))
         );
 
         -- Inventory movement ledger.
@@ -213,6 +249,9 @@ export async function initializeDatabase(): Promise<void> {
         CREATE INDEX IF NOT EXISTS idx_inventory_movements_product ON inventory_movements(product_id);
         CREATE INDEX IF NOT EXISTS idx_inventory_movements_synced ON inventory_movements(synced);
         CREATE INDEX IF NOT EXISTS idx_inventory_movements_ref ON inventory_movements(reference_type, reference_id);
+        CREATE INDEX IF NOT EXISTS idx_audit_events_date ON audit_events(created_at);
+        CREATE INDEX IF NOT EXISTS idx_audit_events_entity ON audit_events(entity_type, entity_id);
+        CREATE INDEX IF NOT EXISTS idx_daily_closes_date ON daily_closes(date_key);
 
         -- Insert default settings if not exist
         INSERT OR IGNORE INTO settings (id) VALUES (1);
@@ -242,6 +281,9 @@ async function runMigrations(database: SQLite.SQLiteDatabase): Promise<void> {
     "ALTER TABLE invoices ADD COLUMN invoice_type TEXT DEFAULT 'sale'",
     "ALTER TABLE invoices ADD COLUMN merchant_name TEXT",
     "ALTER TABLE invoices ADD COLUMN merchant_phone TEXT",
+    "ALTER TABLE invoices ADD COLUMN refund_amount REAL NOT NULL DEFAULT 0",
+    "ALTER TABLE invoices ADD COLUMN refunded_at TEXT",
+    "ALTER TABLE invoices ADD COLUMN refund_note TEXT",
     "ALTER TABLE purchases ADD COLUMN synced INTEGER DEFAULT 0",
     "ALTER TABLE purchases ADD COLUMN is_deleted INTEGER DEFAULT 0",
     "ALTER TABLE purchase_items ADD COLUMN synced INTEGER DEFAULT 0",
@@ -264,6 +306,11 @@ async function runMigrations(database: SQLite.SQLiteDatabase): Promise<void> {
   await database.runAsync(
     "UPDATE settings SET server_url = ? WHERE id = 1 AND (server_url IS NULL OR trim(server_url) = '')",
     [DEFAULT_SERVER_URL]
+  );
+
+  await database.runAsync(
+    "UPDATE settings SET sync_token = ? WHERE id = 1 AND (sync_token IS NULL OR trim(sync_token) = '') AND ? <> ''",
+    [DEFAULT_SYNC_TOKEN, DEFAULT_SYNC_TOKEN]
   );
 
   await migrateInvoiceItemsNullableProductId(database);

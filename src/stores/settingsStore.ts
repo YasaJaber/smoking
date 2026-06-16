@@ -4,7 +4,7 @@
 
 import { create } from 'zustand';
 import { getDatabase, runSerialized } from '../db/client';
-import { DEFAULT_SERVER_URL } from '../constants/config';
+import { DEFAULT_SERVER_URL, DEFAULT_SYNC_TOKEN } from '../constants/config';
 import type { Settings } from '../types';
 
 interface SettingsState {
@@ -29,7 +29,7 @@ const defaultSettings: Settings = {
   currency: 'EGP',
   low_stock_threshold: 5,
   server_url: DEFAULT_SERVER_URL,
-  sync_token: '',
+  sync_token: DEFAULT_SYNC_TOKEN,
   created_at: '',
   updated_at: '',
 };

@@ -30,8 +30,19 @@ cashier never waits.
 4. Add Environment Variables:
    - `MONGODB_URI` = your Atlas connection string
    - `MONGODB_DB` = `smoking_pos` (optional)
-   - `SYNC_TOKEN` = a long random secret used by the app in the `x-sync-token` header
+   - `SYNC_TOKEN` = a long random token used by the app in the `x-sync-token` header
 5. **Deploy**. You get a URL like `https://your-project.vercel.app`.
+
+Generate a token locally with:
+
+```bash
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+```
+
+Use the same generated value in:
+
+- Vercel server env: `SYNC_TOKEN`
+- App build/local env: `EXPO_PUBLIC_SYNC_TOKEN`
 
 Or via CLI from the `server/` folder:
 
@@ -48,6 +59,9 @@ In the app: **الإعدادات → المزامنة السحابية → عن�
 Vercel URL **without** a trailing path, e.g. `https://your-project.vercel.app`
 (the app calls `/api/sync` automatically). Enter the same `SYNC_TOKEN` in
 **توكن المزامنة**. Press **حفظ** then **مزامنة الآن**.
+
+For a default value in development/builds, copy the root `.env.example` to
+`.env` and set `EXPO_PUBLIC_SYNC_SERVER_URL` and `EXPO_PUBLIC_SYNC_TOKEN`.
 
 ## Endpoints
 

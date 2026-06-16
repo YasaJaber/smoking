@@ -20,7 +20,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import Animated, { FadeInDown, FadeIn, SlideInDown } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useFocusEffect } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { CurrentDateBadge } from '../../../src/components/common/CurrentDateBadge';
 import {
   getAllProducts,
@@ -281,6 +281,13 @@ export default function InventoryScreen() {
         <Text style={[styles.headerTitle, { color: colors.text }]}>إدارة المخزون</Text>
         <CurrentDateBadge />
         <View style={styles.headerActions}>
+          <Pressable
+            onPress={() => router.push('/inventory/reconciliation')}
+            style={[styles.headerBtn, { backgroundColor: colors.surfaceLight }]}
+          >
+            <MaterialCommunityIcons name="scale-balance" size={18} color={colors.warning} />
+            <Text style={[styles.headerBtnText, { color: colors.warning }]}>تسوية</Text>
+          </Pressable>
           <Pressable
             onPress={openAddCategory}
             style={[styles.headerBtn, { backgroundColor: colors.surfaceLight }]}

@@ -39,7 +39,7 @@ import { useSyncStore } from '../../../src/stores/syncStore';
 import { useCartStore } from '../../../src/stores/cartStore';
 import { useAuthStore } from '../../../src/stores/authStore';
 import { useSettingsStore } from '../../../src/stores/settingsStore';
-import { createInvoice, getInvoiceWithItems } from '../../../src/services/invoiceService';
+import { createInvoice, getInvoiceWithItems, getPartialDebtSummary, type PartialDebtSummary } from '../../../src/services/invoiceService';
 import { getDatabase } from '../../../src/db/client';
 import { formatCurrency } from '../../../src/utils/formatters';
 import { Colors, Gradients, Typography, Spacing, BorderRadius } from '../../../src/constants/theme';
@@ -67,6 +67,7 @@ export default function POSScreen() {
   const [showQuickItem, setShowQuickItem] = useState(false);
   const [lastInvoice, setLastInvoice] = useState<Invoice | null>(null);
   const [lastItems, setLastItems] = useState<InvoiceItem[]>([]);
+  const [debtSummary, setDebtSummary] = useState<PartialDebtSummary>({ count: 0, totalDue: 0, oldestDate: null });
 
   // Reload categories + products every time the screen gains focus, so changes
   // made in other tabs (e.g. adding a category in Inventory) show up here.
@@ -74,6 +75,7 @@ export default function POSScreen() {
     useCallback(() => {
       loadCategories();
       loadProducts(selectedCategory);
+      loadDebtSummary();
     }, [selectedCategory])
   );
 
@@ -109,6 +111,10 @@ export default function POSScreen() {
       );
     }
     setProducts(prods);
+  };
+
+  const loadDebtSummary = async () => {
+    setDebtSummary(await getPartialDebtSummary());
   };
 
   const handleProductPress = useCallback(
@@ -171,6 +177,7 @@ export default function POSScreen() {
 
       // Refresh products to show updated stock
       await loadProducts(selectedCategory);
+      await loadDebtSummary();
 
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
@@ -322,6 +329,18 @@ export default function POSScreen() {
       <View style={[styles.mainContent, isCompact && styles.mainContentCompact]}>
         {/* Left: Products */}
         <Animated.View style={[isCompact ? styles.productsSectionCompact : productsAnimatedStyle, { minHeight: 0 }]}>
+          {debtSummary.count > 0 && (
+            <Pressable
+              onPress={() => router.push('/invoices')}
+              style={[styles.debtAlert, { backgroundColor: 'rgba(245, 158, 11, 0.12)', borderColor: colors.warning }]}
+            >
+              <MaterialCommunityIcons name="alert-circle-outline" size={18} color={colors.warning} />
+              <Text style={[styles.debtAlertText, { color: colors.warning }]}>
+                {debtSummary.count} فواتير جزئية - متبقي {formatCurrency(debtSummary.totalDue, settings.currency)}
+              </Text>
+              <MaterialCommunityIcons name="chevron-left" size={18} color={colors.warning} />
+            </Pressable>
+          )}
           <View style={[styles.quickItemBar, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
             <Pressable
               onPress={() => setShowQuickItem(true)}
@@ -635,6 +654,19 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.sm,
     borderBottomWidth: 1,
     flexWrap: 'wrap',
+  },
+  debtAlert: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    paddingHorizontal: Spacing.base,
+    paddingVertical: Spacing.sm,
+    borderBottomWidth: 1,
+  },
+  debtAlertText: {
+    flex: 1,
+    fontSize: Typography.fontSize.sm,
+    fontWeight: '800',
   },
   quickItemBtn: {
     flexDirection: 'row',

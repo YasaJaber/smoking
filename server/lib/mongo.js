@@ -39,7 +39,7 @@ function getClientPromise() {
 function ensureIndexes(db) {
   if (globalThis._mongoIndexesPromise) return;
 
-  const collections = ['categories', 'products', 'invoices', 'invoice_items', 'purchases', 'purchase_items'];
+  const collections = ['categories', 'products', 'invoices', 'invoice_items', 'purchases', 'purchase_items', 'inventory_movements'];
   globalThis._mongoIndexesPromise = Promise.all(
     collections.map(async (name) => {
       const coll = db.collection(name);

@@ -75,6 +75,9 @@ export interface Invoice {
   amount_due: number;
   payment_method: 'cash';
   status: 'completed' | 'partial' | 'refunded';
+  refund_amount: number;
+  refunded_at: string | null;
+  refund_note: string | null;
   synced: boolean;
   created_at: string;
 }
@@ -181,4 +184,40 @@ export interface PurchaseItem {
   is_deleted?: boolean;
   synced: boolean;
   created_at: string;
+}
+
+export interface AuditEvent {
+  id: string;
+  user_id: string | null;
+  action: 'create' | 'update' | 'delete' | 'refund' | 'restore' | 'backup' | 'close';
+  entity_type: string;
+  entity_id: string;
+  entity_label: string | null;
+  before_json: string | null;
+  after_json: string | null;
+  note: string | null;
+  created_at: string;
+}
+
+export interface DailyCloseReport {
+  date_key: string;
+  gross_sales: number;
+  net_sales: number;
+  cash_collected: number;
+  outstanding_due: number;
+  refunds_total: number;
+  profit: number;
+  invoice_count: number;
+  partial_count: number;
+  items_sold: number;
+  low_stock_count: number;
+  audit_count: number;
+}
+
+export interface DailyCloseSnapshot extends DailyCloseReport {
+  id: string;
+  user_id: string | null;
+  note: string | null;
+  created_at: string;
+  updated_at: string;
 }

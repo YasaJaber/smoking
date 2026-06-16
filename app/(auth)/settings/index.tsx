@@ -24,9 +24,14 @@ import { useAuthStore } from '../../../src/stores/authStore';
 import { useSyncStore } from '../../../src/stores/syncStore';
 import { CurrentDateBadge } from '../../../src/components/common/CurrentDateBadge';
 import { formatDateTime } from '../../../src/utils/formatters';
-import { DEFAULT_SERVER_URL } from '../../../src/constants/config';
+import { DEFAULT_SERVER_URL, DEFAULT_SYNC_TOKEN } from '../../../src/constants/config';
 import { Colors, Gradients, Typography, Spacing, BorderRadius } from '../../../src/constants/theme';
 import { router } from 'expo-router';
+import {
+  createDatabaseBackup,
+  restoreDatabaseFromPickedFile,
+  shareDatabaseBackup,
+} from '../../../src/services/backupService';
 
 type ThemeColors = typeof Colors.dark | typeof Colors.light;
 
@@ -77,7 +82,7 @@ export default function SettingsScreen() {
   const { width } = useWindowDimensions();
   const isCompact = width < 768;
   const { settings, updateSettings } = useSettingsStore();
-  const { logout, updatePin } = useAuthStore();
+  const { logout, updatePin, user } = useAuthStore();
   const syncStatus = useSyncStore((s) => s.status);
   const pendingCount = useSyncStore((s) => s.pendingCount);
   const lastSyncIso = useSyncStore((s) => s.lastSyncIso);
@@ -93,11 +98,12 @@ export default function SettingsScreen() {
   const [footerMsg, setFooterMsg] = useState(settings.footer_message);
   const [lowStock, setLowStock] = useState(settings.low_stock_threshold.toString());
   const [serverUrl, setServerUrl] = useState(settings.server_url);
-  const [syncToken, setSyncToken] = useState(settings.sync_token || '');
+  const [syncToken, setSyncToken] = useState(settings.sync_token || DEFAULT_SYNC_TOKEN);
   const [currentPin, setCurrentPin] = useState('');
   const [newPin, setNewPin] = useState('');
   const [confirmPin, setConfirmPin] = useState('');
   const [isChangingPin, setIsChangingPin] = useState(false);
+  const [backupBusy, setBackupBusy] = useState(false);
 
   const handleSave = async () => {
     try {
@@ -132,6 +138,10 @@ export default function SettingsScreen() {
   const handleSyncNow = async () => {
     if (!serverUrl.trim()) {
       Alert.alert('تنبيه', 'اكتب عنوان السيرفر واحفظ الإعدادات الأول');
+      return;
+    }
+    if (!syncToken.trim()) {
+      Alert.alert('تنبيه', 'اكتب توكن المزامنة واحفظ الإعدادات الأول');
       return;
     }
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -170,6 +180,61 @@ export default function SettingsScreen() {
     } finally {
       setIsChangingPin(false);
     }
+  };
+
+  const handleCreateBackup = async () => {
+    setBackupBusy(true);
+    try {
+      const backup = await createDatabaseBackup(user?.id);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      Alert.alert('تم النسخ', `تم حفظ نسخة احتياطية:\n${backup.name}`);
+    } catch {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      Alert.alert('تعذر النسخ', 'لم يتم إنشاء النسخة الاحتياطية. حاول مرة أخرى.');
+    } finally {
+      setBackupBusy(false);
+    }
+  };
+
+  const handleExportSQLite = async () => {
+    setBackupBusy(true);
+    try {
+      await shareDatabaseBackup(user?.id);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      Alert.alert('تعذر التصدير', 'لم يتم تصدير قاعدة البيانات.');
+    } finally {
+      setBackupBusy(false);
+    }
+  };
+
+  const handleRestoreSQLite = () => {
+    Alert.alert(
+      'استرجاع قاعدة بيانات؟',
+      'هيتم استبدال البيانات الحالية بملف SQLite اللي هتختاره. اعمل نسخة احتياطية الأول لو محتاج ترجع.',
+      [
+        { text: 'إلغاء', style: 'cancel' },
+        {
+          text: 'استرجاع',
+          style: 'destructive',
+          onPress: async () => {
+            setBackupBusy(true);
+            try {
+              await restoreDatabaseFromPickedFile(user?.id);
+              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+              Alert.alert('تم الاسترجاع', 'تم استرجاع قاعدة البيانات بنجاح. افتح الشاشات مرة أخرى لتحديث البيانات.');
+              await refreshSyncStatus();
+            } catch {
+              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+              Alert.alert('تعذر الاسترجاع', 'لم يتم استرجاع قاعدة البيانات. تأكد من اختيار ملف SQLite صحيح.');
+            } finally {
+              setBackupBusy(false);
+            }
+          },
+        },
+      ]
+    );
   };
 
   const syncStatusLabel = (() => {
@@ -379,7 +444,7 @@ export default function SettingsScreen() {
                   style={[styles.input, { backgroundColor: colors.surfaceLight, borderColor: colors.border, color: colors.text, textAlign: 'left' }]}
                   value={syncToken}
                   onChangeText={setSyncToken}
-                  placeholder="SYNC_TOKEN"
+                  placeholder="نفس قيمة SYNC_TOKEN على Vercel"
                   placeholderTextColor={colors.textMuted}
                   autoCapitalize="none"
                   secureTextEntry
@@ -419,6 +484,42 @@ export default function SettingsScreen() {
                     <MaterialCommunityIcons name="sync" size={18} color="#fff" />
                     <Text style={styles.saveBtnText}>مزامنة الآن</Text>
                   </LinearGradient>
+                </Pressable>
+              </View>
+            </SettingSection>
+
+            <SettingSection title="النسخ والتدقيق" icon="database-cog" delay={275} colors={colors}>
+              <View style={styles.actionGrid}>
+                <Pressable
+                  onPress={handleCreateBackup}
+                  disabled={backupBusy}
+                  style={[styles.toolButton, { backgroundColor: colors.surfaceLight, borderColor: colors.border, opacity: backupBusy ? 0.6 : 1 }]}
+                >
+                  <MaterialCommunityIcons name="database-plus" size={18} color={colors.accent} />
+                  <Text style={[styles.toolButtonText, { color: colors.text }]}>نسخة احتياطية</Text>
+                </Pressable>
+                <Pressable
+                  onPress={handleExportSQLite}
+                  disabled={backupBusy}
+                  style={[styles.toolButton, { backgroundColor: colors.surfaceLight, borderColor: colors.border, opacity: backupBusy ? 0.6 : 1 }]}
+                >
+                  <MaterialCommunityIcons name="database-export" size={18} color={colors.primary} />
+                  <Text style={[styles.toolButtonText, { color: colors.text }]}>تصدير SQLite</Text>
+                </Pressable>
+                <Pressable
+                  onPress={handleRestoreSQLite}
+                  disabled={backupBusy}
+                  style={[styles.toolButton, { backgroundColor: colors.surfaceLight, borderColor: colors.border, opacity: backupBusy ? 0.6 : 1 }]}
+                >
+                  <MaterialCommunityIcons name="database-import" size={18} color={colors.warning} />
+                  <Text style={[styles.toolButtonText, { color: colors.text }]}>استرجاع SQLite</Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => router.push('/settings/audit')}
+                  style={[styles.toolButton, { backgroundColor: colors.surfaceLight, borderColor: colors.border }]}
+                >
+                  <MaterialCommunityIcons name="clipboard-text-clock" size={18} color={colors.secondary} />
+                  <Text style={[styles.toolButtonText, { color: colors.text }]}>سجل التدقيق</Text>
                 </Pressable>
               </View>
             </SettingSection>
@@ -542,6 +643,26 @@ const styles = StyleSheet.create({
   },
   syncStatusText: { fontSize: Typography.fontSize.xs, fontWeight: '600' },
   syncMeta: { fontSize: Typography.fontSize.xs, marginTop: Spacing.xs },
+  actionGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: Spacing.sm,
+    padding: Spacing.base,
+    paddingTop: Spacing.sm,
+  },
+  toolButton: {
+    flex: 1,
+    minWidth: 150,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.sm,
+    borderWidth: 1,
+    borderRadius: BorderRadius.lg,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.md,
+  },
+  toolButtonText: { fontSize: Typography.fontSize.sm, fontWeight: '800' },
   dangerBtn: {
     flexDirection: 'row',
     alignItems: 'center',

@@ -98,6 +98,16 @@ export default function AuthLayout() {
         }}
       />
       <Tabs.Screen
+        name="daily-close"
+        options={{
+          title: 'إغلاق اليوم',
+          href: isAdmin ? undefined : null,
+          tabBarIcon: ({ color, size }) => (
+            <MaterialCommunityIcons name="calendar-check" size={size} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
         name="settings"
         options={{
           title: 'الإعدادات',

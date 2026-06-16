@@ -3,6 +3,7 @@
 // ============================================================
 
 import { getDatabase, generateId, runSerialized } from '../db/client';
+import { logAuditEvent } from './auditService';
 import type { Category, Product } from '../types';
 
 // ==================== CATEGORIES ====================
@@ -146,7 +147,8 @@ export async function createProduct(
 
 export async function updateProduct(
   id: string,
-  updates: Partial<Pick<Product, 'name' | 'category_id' | 'cost_price' | 'sell_price' | 'quantity' | 'min_quantity'>>
+  updates: Partial<Pick<Product, 'name' | 'category_id' | 'cost_price' | 'sell_price' | 'quantity' | 'min_quantity'>>,
+  userId?: string | null
 ): Promise<void> {
   return runSerialized(async () => {
   const db = await getDatabase();
@@ -190,16 +192,99 @@ export async function updateProduct(
     await db.execAsync('ROLLBACK');
     throw error;
   }
+
+  await logAuditEvent({
+    userId,
+    action: 'update',
+    entityType: 'product',
+    entityId: id,
+    entityLabel: existing.name,
+    before: existing,
+    after: { ...existing, ...updates },
+    note: updates.quantity !== undefined ? 'product_edit_with_stock_change' : 'product_edit',
+  }).catch(() => undefined);
   });
 }
 
-export async function deleteProduct(id: string): Promise<void> {
+export async function deleteProduct(id: string, userId?: string | null): Promise<void> {
   return runSerialized(async () => {
   const db = await getDatabase();
+  const existing = await db.getFirstAsync<Product>(
+    'SELECT * FROM products WHERE id = ? AND is_active = 1',
+    [id]
+  );
   await db.runAsync(
     "UPDATE products SET is_active = 0, synced = 0, updated_at = datetime('now') WHERE id = ?",
     [id]
   );
+  if (existing) {
+    await logAuditEvent({
+      userId,
+      action: 'delete',
+      entityType: 'product',
+      entityId: id,
+      entityLabel: existing.name,
+      before: existing,
+      after: { ...existing, is_active: false },
+    }).catch(() => undefined);
+  }
+  });
+}
+
+export async function reconcileProductStock(
+  productId: string,
+  nextQuantity: number,
+  note?: string,
+  userId?: string | null
+): Promise<Product> {
+  return runSerialized(async () => {
+    const db = await getDatabase();
+    const now = new Date().toISOString();
+    const existing = await db.getFirstAsync<Product>(
+      'SELECT * FROM products WHERE id = ? AND is_active = 1',
+      [productId]
+    );
+
+    if (!existing) throw new Error('PRODUCT_NOT_FOUND');
+
+    const quantity = Math.max(0, Math.floor(Number(nextQuantity) || 0));
+    const delta = quantity - existing.quantity;
+
+    await db.execAsync('BEGIN TRANSACTION');
+    try {
+      await db.runAsync(
+        'UPDATE products SET quantity = ?, synced = 0, updated_at = ? WHERE id = ?',
+        [quantity, now, productId]
+      );
+
+      if (delta !== 0) {
+        await db.runAsync(
+          `INSERT INTO inventory_movements
+            (id, product_id, delta, reason, reference_type, reference_id, note, synced, applied, created_at)
+           VALUES (?, ?, ?, 'adjustment', 'products', ?, ?, 0, 1, ?)`,
+          [generateId(), productId, delta, productId, note?.trim() || 'stock_reconciliation', now]
+        );
+      }
+
+      await db.execAsync('COMMIT');
+    } catch (error) {
+      await db.execAsync('ROLLBACK');
+      throw error;
+    }
+
+    const updated = { ...existing, quantity, synced: false, updated_at: now };
+    await logAuditEvent({
+      userId,
+      action: 'update',
+      entityType: 'inventory',
+      entityId: productId,
+      entityLabel: existing.name,
+      before: { quantity: existing.quantity },
+      after: { quantity, delta },
+      note: note?.trim() || 'stock_reconciliation',
+    }).catch(() => undefined);
+
+    return updated;
   });
 }
 
