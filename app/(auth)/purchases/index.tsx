@@ -577,7 +577,7 @@ export default function PurchasesScreen() {
         animationType="fade"
         onRequestClose={() => setShowBudgetModal(false)}
       >
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={[styles.modalOverlay, { backgroundColor: colors.overlay }]}>
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={[styles.modalOverlay, { backgroundColor: colors.overlay }]}>
           <Animated.View entering={SlideInDown.duration(300)} style={[styles.modal, { width: modalWidth, maxHeight: modalMaxHeight * 0.6, backgroundColor: colors.surface }]}>
             <View style={styles.modalHeader}>
               <Text style={[styles.modalTitle, { color: colors.text }]}>مبلغ المشتريات</Text>
@@ -634,7 +634,7 @@ export default function PurchasesScreen() {
         animationType="fade"
         onRequestClose={() => setShowTopUpModal(false)}
       >
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={[styles.modalOverlay, { backgroundColor: colors.overlay }]}>
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={[styles.modalOverlay, { backgroundColor: colors.overlay }]}>
           <Animated.View entering={SlideInDown.duration(300)} style={[styles.modal, { width: modalWidth, maxHeight: modalMaxHeight * 0.5, backgroundColor: colors.surface }]}>
             <View style={styles.modalHeader}>
               <Text style={[styles.modalTitle, { color: colors.text }]}>إضافة مبلغ</Text>
@@ -767,7 +767,7 @@ export default function PurchasesScreen() {
         animationType="fade"
         onRequestClose={() => setShowAddItemModal(false)}
       >
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={[styles.modalOverlay, { backgroundColor: colors.overlay }]}>
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={[styles.modalOverlay, { backgroundColor: colors.overlay }]}>
           <Animated.View entering={SlideInDown.duration(300)} style={[styles.modal, { width: modalWidth, maxHeight: modalMaxHeight, backgroundColor: colors.surface }]}>
             <View style={styles.modalHeader}>
               <Text style={[styles.modalTitle, { color: colors.text }]}>إضافة صنف</Text>
