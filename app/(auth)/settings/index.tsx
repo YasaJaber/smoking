@@ -12,6 +12,7 @@ import {
   Pressable,
   Switch,
   Alert,
+  Linking,
   useWindowDimensions,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -551,7 +552,13 @@ export default function SettingsScreen() {
         {/* App Info */}
         <View style={styles.appInfo}>
           <Text style={[styles.appInfoText, { color: colors.textMuted }]}>
-            Smoking POS v1.0.0 • صُنع بـ ❤️
+            Smoking POS v1.0.0 • developed by{' '}
+            <Text
+              style={[styles.appInfoLink, { color: colors.primary }]}
+              onPress={() => Linking.openURL('https://www.linkedin.com/in/yasa-jaber/')}
+            >
+              Yasa Jaber
+            </Text>
           </Text>
         </View>
       </ScrollView>
@@ -691,4 +698,5 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.xl,
   },
   appInfoText: { fontSize: Typography.fontSize.xs },
+  appInfoLink: { fontWeight: '700' },
 });
