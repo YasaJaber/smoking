@@ -76,6 +76,36 @@ function buildInvoiceCode(deviceId: string, invoiceNumber: number): string {
   return `INV-${devicePart}-${String(invoiceNumber).padStart(6, '0')}`;
 }
 
+function normalizeCartItems(cartItems: CartItem[]): CartItem[] {
+  const byKey = new Map<string, CartItem>();
+
+  for (const item of cartItems) {
+    const quantity = Math.max(0, Math.floor(Number(item.quantity) || 0));
+    if (quantity <= 0) continue;
+
+    const key = item.isCustom ? `custom:${item.product.id}` : `product:${item.product.id}`;
+    const existing = byKey.get(key);
+
+    if (!existing) {
+      byKey.set(key, {
+        ...item,
+        quantity,
+        total: quantity * item.product.sell_price,
+      });
+      continue;
+    }
+
+    const nextQuantity = existing.quantity + quantity;
+    byKey.set(key, {
+      ...existing,
+      quantity: nextQuantity,
+      total: nextQuantity * existing.product.sell_price,
+    });
+  }
+
+  return Array.from(byKey.values());
+}
+
 /**
  * Create a new invoice from cart items
  * Supports partial payment - if amountPaid < total, status = 'partial'
@@ -104,6 +134,11 @@ export async function createInvoice(
   const invoiceType = options.invoiceType ?? 'sale';
   const merchantName = options.merchantName?.trim() || null;
   const merchantPhone = options.merchantPhone?.trim() || null;
+  const invoiceItems = normalizeCartItems(cartItems);
+
+  if (invoiceItems.length === 0) {
+    throw new Error('INVOICE_EMPTY');
+  }
 
   // Start transaction
   await db.execAsync('BEGIN TRANSACTION');
@@ -136,7 +171,7 @@ export async function createInvoice(
     );
 
     // Insert invoice items; only inventory products affect stock
-    for (const item of cartItems) {
+    for (const item of invoiceItems) {
       const itemId = generateId();
       const isCustom = item.isCustom === true;
 

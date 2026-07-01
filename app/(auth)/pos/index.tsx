@@ -4,7 +4,7 @@
 // Resizable cart panel via drag handle
 // ============================================================
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   View,
   Text,
@@ -15,6 +15,7 @@ import {
   TextInput,
   ScrollView,
   useWindowDimensions,
+  ActivityIndicator,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -69,6 +70,8 @@ export default function POSScreen() {
   const [lastInvoice, setLastInvoice] = useState<Invoice | null>(null);
   const [lastItems, setLastItems] = useState<InvoiceItem[]>([]);
   const [debtSummary, setDebtSummary] = useState<PartialDebtSummary>({ count: 0, totalDue: 0, oldestDate: null });
+  const [checkoutSubmitting, setCheckoutSubmitting] = useState(false);
+  const checkoutInFlight = useRef(false);
 
   // Reload categories + products every time the screen gains focus, so changes
   // made in other tabs (e.g. adding a category in Inventory) show up here.
@@ -126,7 +129,7 @@ export default function POSScreen() {
   );
 
   const handleOpenCheckout = () => {
-    if (cart.items.length === 0) return;
+    if (cart.items.length === 0 || checkoutInFlight.current) return;
     const defaultTotal = cart.total.toFixed(2);
     setInvoiceName('');
     setFinalTotalAmount(defaultTotal);
@@ -140,7 +143,7 @@ export default function POSScreen() {
   };
 
   const handleConfirmCheckout = async () => {
-    if (cart.items.length === 0 || !user) return;
+    if (cart.items.length === 0 || !user || checkoutInFlight.current) return;
 
     const finalTotal = parseFloat(finalTotalAmount) || 0;
     if (finalTotal <= 0) {
@@ -153,6 +156,9 @@ export default function POSScreen() {
       Alert.alert('خطأ', 'يجب إدخال مبلغ مدفوع صحيح');
       return;
     }
+
+    checkoutInFlight.current = true;
+    setCheckoutSubmitting(true);
 
     try {
       const invoice = await createInvoice(
@@ -206,6 +212,9 @@ export default function POSScreen() {
       }
 
       Alert.alert('خطأ', 'حدث خطأ أثناء إتمام البيع. حاول مرة أخرى.');
+    } finally {
+      checkoutInFlight.current = false;
+      setCheckoutSubmitting(false);
     }
   };
 
@@ -444,7 +453,9 @@ export default function POSScreen() {
         visible={showCheckout}
         transparent
         animationType="fade"
-        onRequestClose={() => setShowCheckout(false)}
+        onRequestClose={() => {
+          if (!checkoutSubmitting) setShowCheckout(false);
+        }}
       >
         <View style={[styles.modalOverlay, { backgroundColor: colors.overlay }]}>
           <Animated.View
@@ -463,7 +474,7 @@ export default function POSScreen() {
                 <Text style={[styles.modalTitle, { color: colors.text }]}>
                   إتمام البيع
                 </Text>
-                <Pressable onPress={() => setShowCheckout(false)}>
+                <Pressable disabled={checkoutSubmitting} onPress={() => setShowCheckout(false)}>
                   <MaterialCommunityIcons name="close" size={24} color={colors.textSecondary} />
                 </Pressable>
               </View>
@@ -594,16 +605,20 @@ export default function POSScreen() {
               </View>
 
               {/* Confirm Button */}
-              <Pressable onPress={handleConfirmCheckout}>
+              <Pressable disabled={checkoutSubmitting} onPress={handleConfirmCheckout}>
                 <LinearGradient
                   colors={Gradients.primary as unknown as readonly [string, string, ...string[]]}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 0 }}
-                  style={styles.confirmBtn}
+                  style={[styles.confirmBtn, checkoutSubmitting && styles.confirmBtnDisabled]}
                 >
-                  <MaterialCommunityIcons name="check-circle" size={22} color="#fff" />
+                  {checkoutSubmitting ? (
+                    <ActivityIndicator size="small" color="#fff" />
+                  ) : (
+                    <MaterialCommunityIcons name="check-circle" size={22} color="#fff" />
+                  )}
                   <Text style={styles.confirmText}>
-                    {changeAmount < 0 ? 'تأكيد (دفع جزئي)' : 'تأكيد البيع'}
+                    {checkoutSubmitting ? 'جاري الحفظ' : changeAmount < 0 ? 'تأكيد (دفع جزئي)' : 'تأكيد البيع'}
                   </Text>
                 </LinearGradient>
               </Pressable>
@@ -912,6 +927,9 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.md,
     borderRadius: BorderRadius.lg,
     gap: Spacing.sm,
+  },
+  confirmBtnDisabled: {
+    opacity: 0.65,
   },
   confirmText: {
     color: '#fff',
