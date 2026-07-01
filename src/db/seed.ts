@@ -27,6 +27,25 @@ async function clearPreProductionData(): Promise<void> {
   );
   if (cleanupDone?.value === '1') return;
 
+  const existingData = await db.getFirstAsync<{ count: number }>(
+    `SELECT
+      (SELECT COUNT(*) FROM products) +
+      (SELECT COUNT(*) FROM categories) +
+      (SELECT COUNT(*) FROM invoices) +
+      (SELECT COUNT(*) FROM invoice_items) +
+      (SELECT COUNT(*) FROM purchases) +
+      (SELECT COUNT(*) FROM purchase_items) +
+      (SELECT COUNT(*) FROM inventory_movements) +
+      (SELECT COUNT(*) FROM users) AS count`
+  );
+
+  if ((existingData?.count || 0) > 0) {
+    await db.runAsync(
+      "INSERT OR REPLACE INTO meta (key, value) VALUES ('pre_production_data_cleared', '1')"
+    );
+    return;
+  }
+
   await db.execAsync('BEGIN TRANSACTION');
   try {
     await db.runAsync('DELETE FROM invoice_items');
